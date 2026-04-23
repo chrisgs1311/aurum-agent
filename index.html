@@ -1685,7 +1685,10 @@ function getOrlandoSession() {
 function updateMarketUI() {
   if(!marketData) return;
   updateDataQualityBanner();
-  if(openPosition) updatePositionDisplay();
+  if(openPosition) {
+    updatePositionDisplay();
+    checkBETrigger();
+  }
   const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
   document.getElementById('marketPrice').textContent = '$' + marketData.price.toFixed(2);
   const ch = marketData.ch, chp = marketData.chp;
@@ -1735,15 +1738,20 @@ function toggleTelegram() {
   fields.style.display = tgEnabled ? 'block' : 'none';
 }
 
-async function sendToTelegram(signal, price, tp, sl, rr, confidence, reasoning) {
+async function sendToTelegram(signal, price, tp, sl, rr, confidence, reasoning, tp1=null, tp2=null, be=null) {
   const token = document.getElementById('tgToken').value.trim();
   const chat  = document.getElementById('tgChat').value.trim();
   if(!token || !chat) return false;
   const em = signal==='COMPRAR' ? '🟢' : signal==='VENDER' ? '🔴' : '🟡';
+  const tpLine = tp1 && tp2
+    ? `🎯 TP1: $${Number(tp1).toFixed(2)} (50%)\n🎯 TP2: $${Number(tp2).toFixed(2)} (50%)\n`
+    : `🎯 TP: $${Number(tp).toFixed(2)}\n`;
+  const beLine = be ? `⚡ BE en: $${Number(be).toFixed(2)}\n` : '';
   const msg = `${em} *AURUM AGENTE · ${signal}*\n` +
-              `💰 Entrada: $${price.toFixed(2)}\n` +
-              `🎯 TP: $${tp.toFixed(2)}\n` +
-              `🛡 SL: $${sl.toFixed(2)}\n` +
+              `💰 Entrada: $${Number(price).toFixed(2)}\n` +
+              tpLine +
+              `🛡 SL: $${Number(sl).toFixed(2)}\n` +
+              beLine +
               `📊 RR: ${rr}:1\n` +
               `🤖 Confianza IA: ${confidence}%\n` +
               `\n_${reasoning.slice(0,200)}..._`;
@@ -2102,8 +2110,11 @@ Luego el JSON entre etiquetas signal (precios NUMÉRICOS sin símbolo $):
   "action": "COMPRAR | VENDER | ESPERAR",
   "confidence": 0-100,
   "entry": precio_numerico,
+  "tp1": precio_numerico,
+  "tp2": precio_numerico,
   "tp": precio_numerico,
   "sl": precio_numerico,
+  "be_trigger": precio_numerico,
   "rr": ratio_numerico,
   "zona_interes": "rango tipo '3940-3945'",
   "confluencias": ["confluencia CONCRETA 1", "confluencia CONCRETA 2", "confluencia CONCRETA 3"],
@@ -2118,6 +2129,13 @@ Luego el JSON entre etiquetas signal (precios NUMÉRICOS sin símbolo $):
   "annotations": [/* se agregan si hay imagen — ver instrucciones abajo en el mensaje */]
 }
 </signal>
+
+SOBRE TP1 / TP2 / BE:
+- tp1: primer objetivo parcial (50% de la posición). Zona de liquidez más cercana o FVG fill.
+- tp2: objetivo final (50% restante). Estructura HTF o swing high/low previo.
+- tp: debe ser igual a tp2 (para compatibilidad).
+- be_trigger: precio al cual mover SL a BE. Generalmente igual a tp1 o ligeramente después.
+- rr: calcular usando tp2 como objetivo final.
 
 ═══════════════════════════════════════════════════════════
 REGLAS FINALES — NO NEGOCIABLES
@@ -2330,20 +2348,37 @@ function buildSignalCard(sig) {
         <span style="font-size:8px;color:var(--dim2)">${escapeHtml(sig.timeframe||'')} · ${escapeHtml(sig.session||'')}</span>
       </div>
       <div class="signal-main ${cls}">${em} ${escapeHtml(sig.action)}</div>
-      <div class="signal-levels">
+      <div class="signal-levels" style="grid-template-columns:${sig.tp1 && sig.tp2 ? 'repeat(4,1fr)' : 'repeat(3,1fr)'}">
         <div class="signal-level">
           <div class="signal-level-label">ENTRADA</div>
           <div class="signal-level-val" style="color:var(--gold2)">$${Number(sig.entry).toFixed(2)}</div>
         </div>
+        ${sig.tp1 ? `
+        <div class="signal-level">
+          <div class="signal-level-label">TP1 · 50%</div>
+          <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp1).toFixed(2)}</div>
+        </div>
+        <div class="signal-level">
+          <div class="signal-level-label">TP2 · 50%</div>
+          <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp2||sig.tp).toFixed(2)}</div>
+        </div>` : `
         <div class="signal-level">
           <div class="signal-level-label">TAKE PROFIT</div>
           <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp).toFixed(2)}</div>
-        </div>
+        </div>`}
         <div class="signal-level">
           <div class="signal-level-label">STOP LOSS</div>
           <div class="signal-level-val" style="color:var(--red)">$${Number(sig.sl).toFixed(2)}</div>
         </div>
       </div>
+      ${sig.be_trigger ? `
+      <div style="margin-top:6px;padding:5px 10px;border:1px solid rgba(68,136,255,.3);background:rgba(68,136,255,.06);font-size:7px;letter-spacing:2px;color:var(--blue)">
+        ⚡ MOVER SL A BE cuando precio llegue a $${Number(sig.be_trigger).toFixed(2)}
+        <button onclick="trackSignalPosition(${JSON.stringify({entry:sig.entry,tp1:sig.tp1,tp2:sig.tp2||sig.tp,sl:sig.sl,be_trigger:sig.be_trigger,action:sig.action}).replace(/"/g,'&quot;')})"
+          style="margin-left:8px;background:transparent;border:1px solid rgba(68,136,255,.5);color:var(--blue);font-size:7px;letter-spacing:1px;padding:1px 6px;cursor:pointer;font-family:'IBM Plex Mono'">
+          TRACKEAR
+        </button>
+      </div>` : ''}
       <div class="signal-reasoning">
         ${sig.zona_interes ? `<div style="font-size:8px;letter-spacing:2px;color:var(--dim2);margin-bottom:6px">ZONA: <span style="color:var(--gold2)">${escapeHtml(sig.zona_interes)}</span></div>` : ''}
         ${sig.confluencias && sig.confluencias.length ? `
@@ -2545,7 +2580,7 @@ async function runAnalysis() {
     addMessage('agent', text, signal);
     if(signal && signal.action !== 'ESPERAR') {
       if(tgEnabled) {
-        const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning);
+        const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning, signal.tp1, signal.tp2, signal.be_trigger);
         signal._tgSent = sent;
         if(sent) addMessage('system', '✓ Señal enviada al canal de Telegram');
       }
@@ -2821,7 +2856,7 @@ async function sendMessage() {
     saveChatHistory();
     if(signal && signal.action !== 'ESPERAR') {
       if(tgEnabled) {
-        const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning);
+        const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning, signal.tp1, signal.tp2, signal.be_trigger);
         signal._tgSent = sent;
         if(sent) addMessage('system', '✓ Señal enviada al canal de Telegram');
       }
@@ -3036,7 +3071,7 @@ async function runAutoAnalysis() {
         lastAutoSignalTime = now;
         addMessage('agent', text, signal);
         if(tgEnabled) {
-          const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, '[AUTO] ' + signal.reasoning);
+          const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, '[AUTO] ' + signal.reasoning, signal.tp1, signal.tp2, signal.be_trigger);
           signal._tgSent = sent;
           if(sent) addMessage('system', '📲 Señal automática enviada a Telegram');
         }
@@ -3523,6 +3558,10 @@ setInterval(fetchMarketData, 30000);
 updateMemoryUI();
 loadChatHistory();
 
+if('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
 const savedKey = localStorage.getItem('aurum_api_key');
 if(savedKey) document.getElementById('apiKey').value = savedKey;
 document.getElementById('apiKey').addEventListener('change', () => {
@@ -3672,6 +3711,77 @@ function setPosition(dir) {
   updatePositionDisplay();
 }
 
+function trackSignalPosition(sig) {
+  setPosition(sig.action === 'COMPRAR' ? 'LONG' : 'SHORT');
+  if(sig.entry) {
+    const el = document.getElementById('posEntry');
+    if(el) { el.value = sig.entry; }
+  }
+  openPosition = {
+    direction: sig.action === 'COMPRAR' ? 'LONG' : 'SHORT',
+    entry: Number(sig.entry),
+    tp1:   sig.tp1  ? Number(sig.tp1)  : null,
+    tp2:   sig.tp2  ? Number(sig.tp2)  : null,
+    be:    sig.be_trigger ? Number(sig.be_trigger) : null,
+    beAlerted: false,
+    tp1Alerted: false,
+    since: Date.now()
+  };
+  updatePositionDisplay();
+  addMessage('system', `◆ Posición trackeada: ${openPosition.direction} $${openPosition.entry}${openPosition.be ? ` · BE trigger: $${openPosition.be}` : ''}`);
+  if(Notification.permission === 'default') Notification.requestPermission();
+}
+
+function checkBETrigger() {
+  if(!openPosition || !marketData?.price) return;
+  const price = marketData.price;
+
+  // TP1 hit → notificar parcial
+  if(openPosition.tp1 && !openPosition.tp1Alerted) {
+    const hit = openPosition.direction === 'LONG'
+      ? price >= openPosition.tp1
+      : price <= openPosition.tp1;
+    if(hit) {
+      openPosition.tp1Alerted = true;
+      const msg = `⚡ TP1 ALCANZADO ($${openPosition.tp1.toFixed(2)}) — Cerrá el 50% de la posición${openPosition.be ? ` y mové SL a BE ($${openPosition.be.toFixed(2)})` : ''}.`;
+      addMessage('system', msg);
+      if(Notification.permission === 'granted') {
+        new Notification('AURUM · TP1 HIT', { body: msg });
+      }
+    }
+  }
+
+  // BE trigger hit (si no llegó a TP1 todavía, chequeamos el BE separado)
+  if(openPosition.be && !openPosition.beAlerted && !openPosition.tp1Alerted) {
+    const hit = openPosition.direction === 'LONG'
+      ? price >= openPosition.be
+      : price <= openPosition.be;
+    if(hit) {
+      openPosition.beAlerted = true;
+      const msg = `⚡ BE TRIGGER ($${openPosition.be.toFixed(2)}) — Mover SL a entrada ($${openPosition.entry?.toFixed(2) || '?'}) para proteger la posición.`;
+      addMessage('system', msg);
+      if(Notification.permission === 'granted') {
+        new Notification('AURUM · MOVER SL A BE', { body: msg });
+      }
+    }
+  }
+
+  // TP2 hit → cerrar todo
+  if(openPosition.tp2 && openPosition.tp1Alerted && !openPosition.tp2Alerted) {
+    const hit = openPosition.direction === 'LONG'
+      ? price >= openPosition.tp2
+      : price <= openPosition.tp2;
+    if(hit) {
+      openPosition.tp2Alerted = true;
+      const msg = `✓ TP2 ALCANZADO ($${openPosition.tp2.toFixed(2)}) — Cerrá el 100% de la posición. Trade completo.`;
+      addMessage('system', msg);
+      if(Notification.permission === 'granted') {
+        new Notification('AURUM · TP2 HIT ✓', { body: msg });
+      }
+    }
+  }
+}
+
 function updatePositionDisplay() {
   if(!openPosition) return;
   const entryVal = parseFloat(document.getElementById('posEntry')?.value);
@@ -3692,7 +3802,20 @@ function updatePositionDisplay() {
     : openPosition.entry - marketData.price;
   const color = diff >= 0 ? 'var(--green)' : 'var(--red)';
   const sign  = diff >= 0 ? '+' : '';
-  statusBar.innerHTML = `${openPosition.direction} desde $${openPosition.entry.toFixed(2)} · P&L: <span style="color:${color};font-weight:700">${sign}$${diff.toFixed(2)}</span>`;
+
+  let html = `${openPosition.direction} $${openPosition.entry.toFixed(2)} · P&L: <span style="color:${color};font-weight:700">${sign}$${diff.toFixed(2)}</span>`;
+  if(openPosition.tp1) {
+    const tp1Hit = openPosition.tp1Alerted;
+    html += `<br><span style="color:${tp1Hit ? 'var(--dim2)' : 'var(--green)'}">TP1: $${openPosition.tp1.toFixed(2)}${tp1Hit ? ' ✓' : ''}</span>`;
+  }
+  if(openPosition.tp2) {
+    const tp2Hit = openPosition.tp2Alerted;
+    html += ` · <span style="color:${tp2Hit ? 'var(--dim2)' : 'var(--green)'}">TP2: $${openPosition.tp2.toFixed(2)}${tp2Hit ? ' ✓' : ''}</span>`;
+  }
+  if(openPosition.be && !openPosition.beAlerted && !openPosition.tp1Alerted) {
+    html += `<br><span style="color:var(--blue)">BE en: $${openPosition.be.toFixed(2)}</span>`;
+  }
+  statusBar.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════════════════
