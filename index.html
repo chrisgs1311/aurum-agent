@@ -770,6 +770,58 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         </div>
         <div id="dxyCorrelation" style="padding:6px 8px;font-size:7px;letter-spacing:1.5px;line-height:1.7;border-left:2px solid var(--dim)">—</div>
       </div>
+
+      <!-- KEY LEVELS — PDH/PDL/PWH/PWL/Monthly Open -->
+      <div id="keyLevelsBlock" style="margin-top:10px;padding:10px;border:1px solid var(--border);background:var(--bg3);display:none">
+        <div style="font-size:7px;letter-spacing:3px;color:var(--dim2);margin-bottom:8px">NIVELES CLAVE INSTITUCIONALES</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2)">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">PDH</div>
+            <div id="klPDH" style="color:var(--green);font-weight:700">—</div>
+          </div>
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2)">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">PDL</div>
+            <div id="klPDL" style="color:var(--red);font-weight:700">—</div>
+          </div>
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2)">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">PWH</div>
+            <div id="klPWH" style="color:var(--green);font-weight:700">—</div>
+          </div>
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2)">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">PWL</div>
+            <div id="klPWL" style="color:var(--red);font-weight:700">—</div>
+          </div>
+        </div>
+        <div id="klMonthly" style="margin-top:4px;font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2)">
+          <span style="color:var(--dim);letter-spacing:1px">MONTHLY OPEN</span> <span id="klMO" style="color:var(--gold2);font-weight:700">—</span>
+        </div>
+        <div id="klAlert" style="margin-top:6px;font-size:7px;letter-spacing:1px;color:var(--gold);display:none"></div>
+      </div>
+
+      <!-- COT — COMMITMENT OF TRADERS (Oro) -->
+      <div id="cotBlock" style="margin-top:10px;padding:10px;border:1px solid var(--border);background:var(--bg3);display:none">
+        <div style="font-size:7px;letter-spacing:3px;color:var(--dim2);margin-bottom:8px;display:flex;justify-content:space-between">
+          COT · POSICIONAMIENTO INSTITUCIONAL
+          <span id="cotDate" style="font-size:6px;color:var(--dim)"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2);text-align:center">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">ESPECULADORES NET</div>
+            <div id="cotSpecNet" style="font-weight:700;font-size:11px">—</div>
+          </div>
+          <div style="font-size:7px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border2);text-align:center">
+            <div style="color:var(--dim);letter-spacing:1px;margin-bottom:2px">CAMBIO SEMANA</div>
+            <div id="cotSpecChg" style="font-weight:700;font-size:11px">—</div>
+          </div>
+        </div>
+        <div id="cotBias" style="padding:5px 8px;font-size:7px;letter-spacing:1.5px;line-height:1.7;border-left:2px solid var(--dim)">—</div>
+      </div>
+
+      <!-- CALENDARIO ECONÓMICO -->
+      <div id="calendarBlock" style="margin-top:10px;padding:10px;border:1px solid var(--border);background:var(--bg3)">
+        <div style="font-size:7px;letter-spacing:3px;color:var(--dim2);margin-bottom:8px">📅 EVENTOS MACRO · PRÓXIMAS 24H</div>
+        <div id="calendarEvents" style="font-size:7px;color:var(--dim2);letter-spacing:1px">Cargando...</div>
+      </div>
     </div>
     </div>
 
@@ -1172,6 +1224,9 @@ let lastSignalTime  = null;
 let openPosition    = null; // { direction:'LONG'|'SHORT', entry:number, since:number }
 let countdownInterval = null;
 let dxyData         = null; // { price, ch, chp, timestamp }
+let calendarData    = null; // upcoming high-impact USD events
+let cotData         = null; // CFTC COT gold data
+let keyLevels       = null; // { pdh, pdl, pwh, pwl, monthlyOpen }
 
 // ══════════════════════════════════════════════════════════
 // MEMORY (persistent)
@@ -1449,6 +1504,11 @@ function onInstrumentChange() {
 
   fetchMarketData();
   fetchDXYData();
+  fetchKeyLevels();
+  keyLevels = null;
+  cotData   = null;
+  document.getElementById('keyLevelsBlock').style.display = 'none';
+  document.getElementById('cotBlock').style.display       = 'none';
 }
 
 // FIX #4: Lock fetchMarketData to prevent races with analysis
@@ -1730,6 +1790,227 @@ function updateDXYUI() {
   if(ageEl) {
     const mins = Math.round((Date.now() - dxyData.timestamp) / 60000);
     ageEl.textContent = mins < 1 ? 'ahora' : `hace ${mins}m`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// KEY LEVELS — PDH / PDL / PWH / PWL / Monthly Open
+// ══════════════════════════════════════════════════════════
+async function fetchKeyLevels() {
+  const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
+  const block = document.getElementById('keyLevelsBlock');
+  if(block) block.style.display = 'block';
+
+  const polygonKey = document.getElementById('polygonKey')?.value.trim();
+  const ticker = instrument === 'XAUUSD' ? 'C:XAUUSD' : 'I:NDX';
+
+  try {
+    const to   = new Date();
+    const from = new Date(to - 40 * 24 * 60 * 60 * 1000);
+    const fmt  = d => d.toISOString().split('T')[0];
+    let daily  = null;
+
+    if(polygonKey) {
+      const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/${fmt(from)}/${fmt(to)}?adjusted=true&sort=asc&limit=40&apiKey=${polygonKey}`;
+      const res = await fetch(url);
+      const d   = await res.json();
+      if(d.results && d.results.length >= 5) daily = d.results;
+    }
+
+    // Fallback Twelve Data
+    if(!daily) {
+      const sym = instrument === 'XAUUSD' ? 'XAU/USD' : 'NDX';
+      const res = await fetch(`https://api.twelvedata.com/time_series?symbol=${sym}&interval=1day&outputsize=30&apikey=dd53883de1a84cccaf65bf7f4e7a4756`);
+      const d   = await res.json();
+      if(d.values && d.values.length >= 5) {
+        daily = d.values.reverse().map(v => ({ h: parseFloat(v.high), l: parseFloat(v.low), o: parseFloat(v.open), c: parseFloat(v.close), t: new Date(v.datetime).getTime()/1000 }));
+      }
+    }
+
+    if(!daily || daily.length < 2) return;
+
+    // PDH / PDL — último día completo (no el de hoy)
+    const today    = new Date(); today.setHours(0,0,0,0);
+    const todayTs  = today.getTime() / 1000;
+    const prevDays = daily.filter(c => (c.t || c.timestamp) < todayTs);
+    const prev1    = prevDays[prevDays.length - 1];
+    const pdh = prev1 ? (prev1.h || prev1.high) : null;
+    const pdl = prev1 ? (prev1.l || prev1.low)  : null;
+
+    // PWH / PWL — última semana completa (lunes anterior)
+    const dayOfWeek = today.getDay(); // 0=dom,1=lun,...
+    const monday    = new Date(today); monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek));
+    const mondayTs  = monday.getTime() / 1000;
+    const lastWeekCandles = daily.filter(c => (c.t || c.timestamp) < mondayTs);
+    const pwh = lastWeekCandles.length ? Math.max(...lastWeekCandles.slice(-5).map(c => c.h || c.high)) : null;
+    const pwl = lastWeekCandles.length ? Math.min(...lastWeekCandles.slice(-5).map(c => c.l || c.low))  : null;
+
+    // Monthly Open — primera vela del mes actual
+    const month1 = new Date(today.getFullYear(), today.getMonth(), 1).getTime() / 1000;
+    const monthCandles = daily.filter(c => (c.t || c.timestamp) >= month1);
+    const monthlyOpen = monthCandles.length ? (monthCandles[0].o || monthCandles[0].open) : null;
+
+    keyLevels = { pdh, pdl, pwh, pwl, monthlyOpen, timestamp: Date.now() };
+    updateKeyLevelsUI();
+  } catch(e) { console.error('Key levels fetch error:', e); }
+}
+
+function updateKeyLevelsUI() {
+  if(!keyLevels) return;
+  const { pdh, pdl, pwh, pwl, monthlyOpen } = keyLevels;
+  const fmt = v => v ? '$' + Number(v).toFixed(2) : '—';
+  if(document.getElementById('klPDH')) document.getElementById('klPDH').textContent = fmt(pdh);
+  if(document.getElementById('klPDL')) document.getElementById('klPDL').textContent = fmt(pdl);
+  if(document.getElementById('klPWH')) document.getElementById('klPWH').textContent = fmt(pwh);
+  if(document.getElementById('klPWL')) document.getElementById('klPWL').textContent = fmt(pwl);
+  if(document.getElementById('klMO'))  document.getElementById('klMO').textContent  = fmt(monthlyOpen);
+
+  // Alerta si precio está cerca (0.15%) de un nivel clave
+  const price = marketData?.price;
+  if(price) {
+    const levels = [
+      { name:'PDH', val:pdh }, { name:'PDL', val:pdl },
+      { name:'PWH', val:pwh }, { name:'PWL', val:pwl },
+      { name:'Monthly Open', val:monthlyOpen }
+    ].filter(l => l.val);
+    const near = levels.find(l => Math.abs(price - l.val) / price < 0.0015);
+    const alertEl = document.getElementById('klAlert');
+    if(alertEl) {
+      if(near) {
+        alertEl.textContent = `⚡ Precio cerca de ${near.name} ($${Number(near.val).toFixed(2)}) — Zona de reacción probable`;
+        alertEl.style.display = 'block';
+      } else {
+        alertEl.style.display = 'none';
+      }
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// COT — COMMITMENT OF TRADERS (CFTC, Gold/COMEX)
+// ══════════════════════════════════════════════════════════
+async function fetchCOTData() {
+  try {
+    // CFTC Socrata API — Futures Only, Gold COMEX
+    const url = `https://publicreporting.cftc.gov/resource/6dca-aqww.json?$where=market_and_exchange_names LIKE '%GOLD%'&$limit=3&$order=report_date_as_yyyy_mm_dd DESC`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if(!data || !data.length) return;
+    const latest = data[0];
+    const prev   = data[1];
+    const specLong  = parseInt(latest.noncomm_positions_long_all  || 0);
+    const specShort = parseInt(latest.noncomm_positions_short_all || 0);
+    const specNet   = specLong - specShort;
+    const prevNet   = prev ? parseInt(prev.noncomm_positions_long_all||0) - parseInt(prev.noncomm_positions_short_all||0) : null;
+    cotData = {
+      date: latest.report_date_as_yyyy_mm_dd?.split('T')[0],
+      specLong, specShort, specNet,
+      specChg: prevNet !== null ? specNet - prevNet : null
+    };
+    updateCOTUI();
+    document.getElementById('cotBlock')?.style && (document.getElementById('cotBlock').style.display = 'block');
+  } catch(e) { console.error('COT fetch error:', e); }
+}
+
+function updateCOTUI() {
+  if(!cotData) return;
+  const { specNet, specChg, date } = cotData;
+  const netEl  = document.getElementById('cotSpecNet');
+  const chgEl  = document.getElementById('cotSpecChg');
+  const biasEl = document.getElementById('cotBias');
+  const dateEl = document.getElementById('cotDate');
+  if(!netEl) return;
+
+  const sign = specNet >= 0 ? '+' : '';
+  netEl.textContent = sign + specNet.toLocaleString();
+  netEl.style.color = specNet > 0 ? 'var(--green)' : 'var(--red)';
+
+  if(specChg !== null) {
+    const cs = specChg >= 0 ? '+' : '';
+    chgEl.textContent = cs + specChg.toLocaleString();
+    chgEl.style.color = specChg >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+
+  if(dateEl) dateEl.textContent = date || '';
+
+  let biasText = '', biasColor = 'var(--dim)';
+  if(specNet > 150000) {
+    biasText  = '🟢 INSTITUCIONALES MUY LARGOS — Sesgo alcista fuerte en XAU. Favorece setups LONG en pullbacks.';
+    biasColor = 'var(--green)';
+  } else if(specNet > 50000) {
+    biasText  = '🟡 INSTITUCIONALES LARGOS — Sesgo alcista moderado. Preferí LONG en zonas de valor.';
+    biasColor = 'var(--gold)';
+  } else if(specNet < -50000) {
+    biasText  = '🔴 INSTITUCIONALES CORTOS — Sesgo bajista. Favorece setups SHORT o cautela en LONGs.';
+    biasColor = 'var(--red)';
+  } else {
+    biasText  = '⚪ POSICIONAMIENTO NEUTRAL — Sin sesgo claro. Seguí estructura técnica ICT.';
+    biasColor = 'var(--dim2)';
+  }
+  if(specChg !== null && Math.abs(specChg) > 20000) {
+    biasText += specChg > 0 ? ' · Flujo ENTRANTE significativo esta semana.' : ' · Flujo SALIENTE significativo esta semana.';
+  }
+  biasEl.textContent = biasText;
+  biasEl.style.color = biasColor;
+  biasEl.style.borderLeftColor = biasColor;
+}
+
+// ══════════════════════════════════════════════════════════
+// CALENDARIO ECONÓMICO — Forex Factory / alta volatilidad USD
+// ══════════════════════════════════════════════════════════
+async function fetchEconomicCalendar() {
+  const el = document.getElementById('calendarEvents');
+  try {
+    const res  = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json?version=' + Date.now());
+    const events = await res.json();
+    const now  = Date.now();
+    // Filtrar solo eventos USD de alto y medio impacto en próximas 48h
+    const upcoming = events
+      .filter(e => (e.country === 'USD' || e.currency === 'USD') && (e.impact === 'High' || e.impact === 'Medium'))
+      .map(e => ({ ...e, ms: new Date(e.date).getTime() }))
+      .filter(e => e.ms > now - 3600000 && e.ms < now + 48 * 3600000)
+      .sort((a, b) => a.ms - b.ms);
+    calendarData = upcoming;
+    updateCalendarUI();
+    // Auto-pause check
+    checkCalendarAutoPause();
+  } catch(e) {
+    if(el) el.textContent = 'Sin datos de calendario — verificá conexión.';
+  }
+}
+
+function updateCalendarUI() {
+  const el = document.getElementById('calendarEvents');
+  if(!el) return;
+  if(!calendarData || !calendarData.length) {
+    el.innerHTML = '<span style="color:var(--dim)">Sin eventos de alto impacto próximas 48h</span>';
+    return;
+  }
+  const now = Date.now();
+  el.innerHTML = calendarData.slice(0, 6).map(e => {
+    const diff   = e.ms - now;
+    const isPast = diff < 0;
+    const hrs    = Math.floor(Math.abs(diff) / 3600000);
+    const mins   = Math.floor((Math.abs(diff) % 3600000) / 60000);
+    const timeStr = isPast ? `hace ${hrs > 0 ? hrs + 'h ' : ''}${mins}m` : (hrs > 0 ? `en ${hrs}h ${mins}m` : `en ${mins}m`);
+    const impColor = e.impact === 'High' ? 'var(--red)' : 'var(--gold)';
+    const urgStyle = !isPast && diff < 30 * 60000 ? 'background:rgba(204,51,68,.1);border:1px solid rgba(204,51,68,.3);' : 'border:1px solid var(--border2);';
+    return `<div style="margin-bottom:4px;padding:4px 6px;${urgStyle}">
+      <span style="color:${impColor};margin-right:4px">${e.impact === 'High' ? '●' : '○'}</span>
+      <span style="color:var(--text)">${e.title}</span>
+      <span style="color:var(--dim);float:right">${timeStr}</span>
+    </div>`;
+  }).join('');
+}
+
+function checkCalendarAutoPause() {
+  if(!calendarData) return;
+  const now = Date.now();
+  const imminent = calendarData.find(e => e.impact === 'High' && e.ms > now && e.ms - now < 30 * 60000);
+  if(imminent && autoRunning) {
+    const mins = Math.round((imminent.ms - now) / 60000);
+    addMessage('system', `⚠ AUTO-TRADING PAUSADO — "${imminent.title}" en ${mins} min (evento de alto impacto). Reactivá manualmente después del dato.`);
+    stopAutoTrading();
   }
 }
 
@@ -2022,6 +2303,9 @@ ${instrument === 'XAUUSD' && dxyData && dxyData.price != null ? `- DXY: ${dxyDat
 - Hora Orlando: ${s.timeStr} | Sesión: ${sessionDesc}
 - Timeframe análisis: ${tf} | RR objetivo: ${rr}:1 (${rrCfg.note})
 ${openPosition ? `- POSICIÓN ABIERTA: ${openPosition.direction} desde $${openPosition.entry}${openPosition.since ? ` (hace ${Math.floor((Date.now()-openPosition.since)/60000)} min)` : ''}. PRIORIDAD: gestión de la posición existente. ¿Mantener? ¿Mover SL a BE? ¿Salir? Analiza riesgo de la posición abierta antes de buscar nuevas entradas.` : '- SIN POSICIÓN ABIERTA'}
+${keyLevels ? `- NIVELES CLAVE: PDH $${Number(keyLevels.pdh||0).toFixed(2)} | PDL $${Number(keyLevels.pdl||0).toFixed(2)} | PWH $${Number(keyLevels.pwh||0).toFixed(2)} | PWL $${Number(keyLevels.pwl||0).toFixed(2)}${keyLevels.monthlyOpen ? ` | Monthly Open $${Number(keyLevels.monthlyOpen).toFixed(2)}` : ''} — Considerá reacciones en estos niveles como zonas institucionales de primer orden.` : ''}
+${cotData && instrument === 'XAUUSD' ? `- COT GOLD (${cotData.date}): Especuladores NET ${cotData.specNet > 0 ? '+' : ''}${cotData.specNet.toLocaleString()} contratos${cotData.specChg !== null ? ` (cambio semanal: ${cotData.specChg > 0 ? '+' : ''}${cotData.specChg.toLocaleString()})` : ''} — ${cotData.specNet > 100000 ? 'Institucionales muy largos: sesgo ALCISTA estructural' : cotData.specNet < 0 ? 'Institucionales cortos: sesgo BAJISTA estructural' : 'Posicionamiento neutral'}.` : ''}
+${calendarData && calendarData.length ? `- EVENTOS MACRO PRÓXIMOS: ${calendarData.slice(0,3).map(e => { const mins = Math.round((e.ms - Date.now())/60000); return `${e.title} (${mins > 0 ? 'en ' + (mins > 60 ? Math.round(mins/60) + 'h' : mins + 'min') : 'ya ocurrió'}, impacto ${e.impact})`; }).join(' | ')}${calendarData.some(e => e.impact==='High' && e.ms > Date.now() && e.ms - Date.now() < 30*60000) ? ' ⚠ EVENTO DE ALTO IMPACTO INMINENTE — Evitá entradas nuevas.' : ''}` : ''}
 
 CONTEXTO DE SESIÓN:
 ${sessionBias}
@@ -3727,6 +4011,13 @@ fetchMarketData();
 setInterval(fetchMarketData, 30000);
 fetchDXYData();
 setInterval(fetchDXYData, 5 * 60 * 1000);
+fetchKeyLevels();
+setInterval(fetchKeyLevels, 60 * 60 * 1000);       // cada hora
+fetchCOTData();
+setInterval(fetchCOTData, 6 * 60 * 60 * 1000);     // cada 6h (CFTC actualiza semanal)
+fetchEconomicCalendar();
+setInterval(fetchEconomicCalendar, 15 * 60 * 1000); // cada 15min
+setInterval(updateCalendarUI, 60 * 1000);            // refresh countdown cada minuto
 updateMemoryUI();
 loadChatHistory();
 
