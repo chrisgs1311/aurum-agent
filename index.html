@@ -2264,8 +2264,7 @@ Luego el JSON entre etiquetas signal (precios NUMÉRICOS sin símbolo $):
   "proyeccion": "descripcion breve",
   "reasoning": "justificacion en 2 oraciones citando la imagen",
   "session": "sesion actual",
-  "timeframe": "${tf}",
-  "annotations": [/* se agregan si hay imagen — ver instrucciones abajo en el mensaje */]
+  "timeframe": "${tf}"
 }
 </signal>
 
@@ -2296,15 +2295,26 @@ REGLAS FINALES — NO NEGOCIABLES
 // PARSING
 // ══════════════════════════════════════════════════════════
 function parseSignal(text) {
-  const match = text.match(/<signal>([\s\S]*?)<\/signal>/);
+  // Acepta tag cerrado O sin cerrar (Claude a veces trunca)
+  const match = text.match(/<signal>([\s\S]*?)(?:<\/signal>|$)/);
   if(!match) return null;
+  // Extrae el primer bloque JSON válido del contenido
+  const raw = match[1].trim();
+  const jsonStart = raw.indexOf('{');
+  const jsonEnd   = raw.lastIndexOf('}');
+  if(jsonStart === -1 || jsonEnd === -1) return null;
   try {
-    const sig = JSON.parse(match[1].trim());
-    // Si las annotations vienen en tag separado, mezclarlas en el signal
-    if(!sig.annotations) {
-      const annMatch = text.match(/<annotations>([\s\S]*?)<\/annotations>/);
+    const sig = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+    // Merge annotations desde tag separado si no vienen en el signal
+    if(!sig.annotations || !sig.annotations.length) {
+      const annMatch = text.match(/<annotations>([\s\S]*?)(?:<\/annotations>|$)/);
       if(annMatch) {
-        try { sig.annotations = JSON.parse(annMatch[1].trim()); } catch(e) {}
+        const annRaw = annMatch[1].trim();
+        const aStart = annRaw.indexOf('[');
+        const aEnd   = annRaw.lastIndexOf(']');
+        if(aStart !== -1 && aEnd !== -1) {
+          try { sig.annotations = JSON.parse(annRaw.slice(aStart, aEnd + 1)); } catch(e) {}
+        }
       }
     }
     return sig;
@@ -2313,11 +2323,9 @@ function parseSignal(text) {
 
 function cleanText(text) {
   return text
-    .replace(/<signal>[\s\S]*?<\/signal>/g, '')
-    .replace(/<annotations>[\s\S]*?<\/annotations>/g, '')
-    // Strip suelto: arrays JSON que parecen anotaciones (backup por si Claude no usa el tag)
-    .replace(/```json[\s\S]*?```/g, '')
-    .replace(/^\s*[\[{][\s\S]*?"type"\s*:\s*"(?:ob_bull|ob_bear|fvg_bull|fvg_bear|liquidity_high|liquidity_low|entry|tp|sl)"[\s\S]*?[\]}\n]/gm, '')
+    .replace(/<signal>[\s\S]*?(?:<\/signal>|$)/g, '')  // tag cerrado o abierto
+    .replace(/<annotations>[\s\S]*?(?:<\/annotations>|$)/g, '')
+    .replace(/```[\s\S]*?```/g, '')                     // code blocks
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -2932,10 +2940,8 @@ REGLAS FINALES DE ANOTACIÓN:
 4. NO anotes zonas genéricas. Solo OBs/FVGs válidos que mencionaste en el análisis.
 5. Si NO generas señal (ESPERAR), puedes omitir annotations o incluir solo zonas identificadas.
 
-⚠ FORMATO DE SALIDA OBLIGATORIO para anotaciones:
-Pon el array de annotations en un tag SEPARADO al final de tu respuesta:
-<annotations>[{"type":"entry","label":"Entry 3980","x1":0,"y1":0.538,"x2":1,"y2":0.543,"price":3980}, ...]</annotations>
-NO incluyas el array de annotations dentro del JSON de <signal>. Usa el tag <annotations> siempre.`;
+⚠ FORMATO OBLIGATORIO — escribe el array al final así (NO dentro de <signal>):
+<annotations>[{"type":"entry","label":"Entry 3980","x1":0,"y1":0.538,"x2":1,"y2":0.543,"price":3980},{"type":"sl","label":"SL 3920","x1":0,"y1":0.961,"x2":1,"y2":0.966,"price":3920}]</annotations>`;
 
   const msgsWithImg = messages.map((m, i) => {
     if(i === messages.length - 1 && m.role === 'user') {
