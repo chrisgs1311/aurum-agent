@@ -1877,8 +1877,8 @@ function toggleTelegram() {
 }
 
 async function sendToTelegram(signal, price, tp, sl, rr, confidence, reasoning, tp1=null, tp2=null, be=null) {
-  const token = document.getElementById('tgToken').value.trim();
-  const chat  = document.getElementById('tgChat').value.trim();
+  const token = document.getElementById('tgToken')?.value.trim() || '';
+  const chat  = document.getElementById('tgChat')?.value.trim() || '';
   if(!token || !chat) return false;
   const em = signal==='COMPRAR' ? '🟢' : signal==='VENDER' ? '🔴' : '🟡';
   const tpLine = tp1 && tp2
@@ -1963,7 +1963,7 @@ function buildSystemPrompt() {
     moderate:     { rr:'1.5', note:'Balanceado' },
     aggressive:   { rr:'2.5', note:'Solo setups premium con RR alto' }
   };
-  const rrCfg = rrMap[risk];
+  const rrCfg = rrMap[risk] || rrMap.moderate;
   const rr    = rrCfg.rr;
   const mem   = getMemorySummary();
   const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
@@ -2018,7 +2018,7 @@ Día de hoy: ${s.dateStr.split(',')[0]}.
 CONTEXTO ACTUAL:
 - Instrumento: ${instrName}
 - Precio: ${price} | Cambio: ${ch}
-${instrument === 'XAUUSD' && dxyData ? `- DXY: ${dxyData.price.toFixed(2)} (${dxyData.ch>=0?'+':''}${dxyData.ch.toFixed(2)}, ${dxyData.ch>=0?'+':''}${dxyData.chp.toFixed(2)}%) — ${dxyData.ch > 0.3 ? 'FORTALEZA DEL DÓLAR: presión bajista sobre XAU' : dxyData.ch < -0.3 ? 'DEBILIDAD DEL DÓLAR: soporte alcista para XAU' : 'DXY neutro'}` : ''}
+${instrument === 'XAUUSD' && dxyData && dxyData.price != null ? `- DXY: ${dxyData.price.toFixed(2)} (${(dxyData.ch||0)>=0?'+':''}${(dxyData.ch||0).toFixed(2)}, ${(dxyData.ch||0)>=0?'+':''}${(dxyData.chp||0).toFixed(2)}%) — ${(dxyData.ch||0) > 0.3 ? 'FORTALEZA DEL DÓLAR: presión bajista sobre XAU' : (dxyData.ch||0) < -0.3 ? 'DEBILIDAD DEL DÓLAR: soporte alcista para XAU' : 'DXY neutro'}` : ''}
 - Hora Orlando: ${s.timeStr} | Sesión: ${sessionDesc}
 - Timeframe análisis: ${tf} | RR objetivo: ${rr}:1 (${rrCfg.note})
 ${openPosition ? `- POSICIÓN ABIERTA: ${openPosition.direction} desde $${openPosition.entry}${openPosition.since ? ` (hace ${Math.floor((Date.now()-openPosition.since)/60000)} min)` : ''}. PRIORIDAD: gestión de la posición existente. ¿Mantener? ¿Mover SL a BE? ¿Salir? Analiza riesgo de la posición abierta antes de buscar nuevas entradas.` : '- SIN POSICIÓN ABIERTA'}
@@ -2490,7 +2490,7 @@ function buildSignalCard(sig) {
       <div class="signal-levels" style="grid-template-columns:${sig.tp1 && sig.tp2 ? 'repeat(4,1fr)' : 'repeat(3,1fr)'}">
         <div class="signal-level">
           <div class="signal-level-label">ENTRADA</div>
-          <div class="signal-level-val" style="color:var(--gold2)">$${Number(sig.entry).toFixed(2)}</div>
+          <div class="signal-level-val" style="color:var(--gold2)">$${sig.entry ? Number(sig.entry).toFixed(2) : '—'}</div>
         </div>
         ${sig.tp1 ? `
         <div class="signal-level">
@@ -2499,15 +2499,15 @@ function buildSignalCard(sig) {
         </div>
         <div class="signal-level">
           <div class="signal-level-label">TP2 · 50%</div>
-          <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp2||sig.tp).toFixed(2)}</div>
+          <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp2||sig.tp||0).toFixed(2)}</div>
         </div>` : `
         <div class="signal-level">
           <div class="signal-level-label">TAKE PROFIT</div>
-          <div class="signal-level-val" style="color:var(--green)">$${Number(sig.tp).toFixed(2)}</div>
+          <div class="signal-level-val" style="color:var(--green)">$${sig.tp ? Number(sig.tp).toFixed(2) : '—'}</div>
         </div>`}
         <div class="signal-level">
           <div class="signal-level-label">STOP LOSS</div>
-          <div class="signal-level-val" style="color:var(--red)">$${Number(sig.sl).toFixed(2)}</div>
+          <div class="signal-level-val" style="color:var(--red)">$${sig.sl ? Number(sig.sl).toFixed(2) : '—'}</div>
         </div>
       </div>
       ${sig.be_trigger ? `
@@ -3109,6 +3109,8 @@ function toggleAutoTrading() {
 }
 
 function startAutoTrading() {
+  if(autoTimer)        { clearInterval(autoTimer);        autoTimer = null; }
+  if(countdownInterval){ clearInterval(countdownInterval); countdownInterval = null; }
   const minutes = parseInt(document.getElementById('autoInterval').value);
   const ms = minutes * 60 * 1000;
   autoRunning = true; autoCount = 0; nextRunIn = ms;
@@ -3688,7 +3690,7 @@ window._previousInstrument = document.getElementById('instrumentSelect')?.value 
 applyTheme(window._previousInstrument);
 
 // Save instrument choice on change (before onInstrumentChange fires)
-document.getElementById('instrumentSelect').addEventListener('change', () => {
+document.getElementById('instrumentSelect')?.addEventListener('change', () => {
   localStorage.setItem('aurum_last_instrument', document.getElementById('instrumentSelect').value);
 });
 
@@ -3874,7 +3876,7 @@ function trackSignalPosition(sig) {
 }
 
 function checkBETrigger() {
-  if(!openPosition || !marketData?.price) return;
+  if(!openPosition || !marketData?.price || !openPosition.direction) return;
   const price = marketData.price;
 
   // TP1 hit → notificar parcial
