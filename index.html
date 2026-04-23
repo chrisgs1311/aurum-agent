@@ -811,6 +811,16 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         <input class="field-input" id="polygonKey" type="password" placeholder="Polygon key...">
         <div style="font-size:7px;color:var(--dim);margin-top:4px">Precio real + velas + RSI + ATR + EMA</div>
       </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:7px;letter-spacing:1.5px;color:var(--dim2)">
+          <input type="checkbox" id="sessionOnlyKey" style="accent-color:var(--gold);cursor:pointer">
+          SOLO ESTA SESIÓN (no guardar)
+        </label>
+        <button onclick="clearSavedKeys()"
+          style="background:transparent;border:1px solid var(--border);color:var(--dim);font-size:7px;letter-spacing:1px;padding:2px 6px;cursor:pointer">
+          BORRAR GUARDADAS
+        </button>
+      </div>
       <div id="polygonStatus" style="font-size:7px;letter-spacing:2px;color:var(--dim2);padding:4px 0;display:none">◆ POLYGON CONECTADO</div>
     </div>
 
@@ -1563,8 +1573,26 @@ async function fetchFromFallback(instrument) {
   try {
     const r2 = await fetch('https://api.twelvedata.com/price?symbol=XAU/USD&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
     const d2 = await r2.json();
-    if(d2.price) { marketData = { price: parseFloat(d2.price), ch:0, chp:0, isFallback: true }; updateMarketUI(); }
+    if(d2.price) { marketData = { price: parseFloat(d2.price), ch:0, chp:0, isFallback: true }; updateMarketUI(); return; }
   } catch(e2) {}
+
+  // Todas las fuentes fallaron
+  showPriceError();
+}
+
+function showPriceError() {
+  const priceEl  = document.getElementById('marketPrice');
+  const changeEl = document.getElementById('marketChange');
+  const banner   = document.getElementById('dataQualityBanner');
+  if(priceEl)  priceEl.textContent = '—';
+  if(changeEl) {
+    changeEl.innerHTML = '⚠ Sin conexión · <span onclick="fetchMarketData(true)" style="color:var(--gold);cursor:pointer;text-decoration:underline">Reintentar</span>';
+    changeEl.style.color = 'var(--red)';
+  }
+  if(banner) {
+    banner.textContent = '⚠ No se pudo obtener precio — agrega Polygon key o revisá tu conexión.';
+    banner.style.display = 'block';
+  }
 }
 
 function updateDataQualityBanner() {
@@ -3498,15 +3526,33 @@ loadChatHistory();
 const savedKey = localStorage.getItem('aurum_api_key');
 if(savedKey) document.getElementById('apiKey').value = savedKey;
 document.getElementById('apiKey').addEventListener('change', () => {
-  localStorage.setItem('aurum_api_key', document.getElementById('apiKey').value);
+  if(!document.getElementById('sessionOnlyKey').checked)
+    localStorage.setItem('aurum_api_key', document.getElementById('apiKey').value);
 });
 
 const savedPolygon = localStorage.getItem('aurum_polygon_key');
 if(savedPolygon) document.getElementById('polygonKey').value = savedPolygon;
 document.getElementById('polygonKey').addEventListener('change', () => {
-  localStorage.setItem('aurum_polygon_key', document.getElementById('polygonKey').value);
+  if(!document.getElementById('sessionOnlyKey').checked)
+    localStorage.setItem('aurum_polygon_key', document.getElementById('polygonKey').value);
   fetchMarketData(true);
 });
+
+document.getElementById('sessionOnlyKey').addEventListener('change', (e) => {
+  if(e.target.checked) {
+    localStorage.removeItem('aurum_api_key');
+    localStorage.removeItem('aurum_polygon_key');
+  }
+});
+
+function clearSavedKeys() {
+  if(!confirm('¿Borrar las API keys guardadas en este browser?')) return;
+  localStorage.removeItem('aurum_api_key');
+  localStorage.removeItem('aurum_polygon_key');
+  document.getElementById('apiKey').value = '';
+  document.getElementById('polygonKey').value = '';
+  addMessage('system', '✓ API keys borradas del almacenamiento local.');
+}
 
 // Load saved Telegram creds
 const savedTgToken = localStorage.getItem('aurum_tg_token');
