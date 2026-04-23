@@ -1620,32 +1620,11 @@ async function fetchDXYData() {
   if(block) block.style.display = instrument === 'XAUUSD' ? 'block' : 'none';
   if(instrument !== 'XAUUSD') return;
 
-  // Intentar Polygon primero si hay key
-  const polygonKey = document.getElementById('polygonKey')?.value.trim();
-  if(polygonKey) {
-    try {
-      const to   = new Date();
-      const from = new Date(to - 2*24*60*60*1000);
-      const url  = `https://api.polygon.io/v2/aggs/ticker/C:DXY/range/1/hour/${from.toISOString().split('T')[0]}/${to.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=50&apiKey=${polygonKey}`;
-      const res  = await fetch(url);
-      const data = await res.json();
-      if(data.results && data.results.length >= 2) {
-        const last = data.results[data.results.length - 1];
-        const prev = data.results[data.results.length - 2];
-        const ch   = last.c - prev.c;
-        const chp  = (ch / prev.c) * 100;
-        dxyData = { price: last.c, ch, chp, timestamp: Date.now() };
-        updateDXYUI();
-        return;
-      }
-    } catch(e) {}
-  }
-
-  // Fallback: Twelve Data
+  // Twelve Data — cambio diario correcto (DXY no es un par forex de Polygon)
   try {
     const res  = await fetch('https://api.twelvedata.com/quote?symbol=DXY&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
     const data = await res.json();
-    if(data.close) {
+    if(data.close && !data.code) {
       const price = parseFloat(data.close);
       const ch    = parseFloat(data.change || 0);
       const chp   = parseFloat(data.percent_change || 0);
@@ -1655,11 +1634,32 @@ async function fetchDXYData() {
     }
   } catch(e) {}
 
-  // Segundo fallback: precio solo sin cambio
+  // Fallback: Polygon con DXY como forex sintético (cambio diario desde open)
+  const polygonKey = document.getElementById('polygonKey')?.value.trim();
+  if(polygonKey) {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const from  = new Date(Date.now() - 5*24*60*60*1000).toISOString().split('T')[0];
+      const url   = `https://api.polygon.io/v2/aggs/ticker/C:DXY/range/1/day/${from}/${today}?adjusted=true&sort=asc&limit=5&apiKey=${polygonKey}`;
+      const res   = await fetch(url);
+      const data  = await res.json();
+      if(data.results && data.results.length >= 2) {
+        const last = data.results[data.results.length - 1];
+        const prev = data.results[data.results.length - 2];
+        const ch   = last.c - prev.c;   // cambio día completo, no candle hora
+        const chp  = (ch / prev.c) * 100;
+        dxyData = { price: last.c, ch, chp, timestamp: Date.now() };
+        updateDXYUI();
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // Último fallback: solo precio, sin cambio diario
   try {
     const res  = await fetch('https://api.twelvedata.com/price?symbol=DXY&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
     const data = await res.json();
-    if(data.price) {
+    if(data.price && !data.code) {
       dxyData = { price: parseFloat(data.price), ch: 0, chp: 0, timestamp: Date.now() };
       updateDXYUI();
     }
@@ -1687,11 +1687,11 @@ function updateDXYUI() {
   const absChp = Math.abs(chp);
 
   if(ch > 0) {
-    if(absChp >= 0.5) {
+    if(absChp >= 0.4) {
       corrText  = '🔴 DXY FUERTE ↑ — Presión bajista significativa en XAU. El dólar está absorbiendo flujo de capitales. Sesgá SHORT o esperá corrección.';
       corrColor = 'var(--red)';
       borderColor = 'var(--red)';
-    } else if(absChp >= 0.2) {
+    } else if(absChp >= 0.15) {
       corrText  = '🟡 DXY AL ALZA — Viento en contra para XAU. Preferí setups SHORT o exigí más confluencias para LONG.';
       corrColor = 'var(--gold)';
       borderColor = 'rgba(201,168,76,.6)';
@@ -1700,11 +1700,11 @@ function updateDXYUI() {
       corrColor = 'var(--dim2)';
     }
   } else if(ch < 0) {
-    if(absChp >= 0.5) {
+    if(absChp >= 0.4) {
       corrText  = '🟢 DXY DÉBIL ↓ — Soporte alcista fuerte en XAU. El dólar pierde fuerza, el oro se beneficia. Sesgá LONG.';
       corrColor = 'var(--green)';
       borderColor = 'rgba(0,204,136,.6)';
-    } else if(absChp >= 0.2) {
+    } else if(absChp >= 0.15) {
       corrText  = '🟢 DXY a la baja — Viento a favor para XAU. Favorece setups LONG.';
       corrColor = 'var(--green)';
       borderColor = 'rgba(0,204,136,.4)';
