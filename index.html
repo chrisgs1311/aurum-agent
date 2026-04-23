@@ -903,6 +903,18 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
       </button>
     </div>
 
+    <div style="padding:0 20px 16px">
+      <div style="font-size:8px;letter-spacing:4px;color:var(--dim2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        CHEQUÉALO
+      </div>
+      <div style="font-size:7px;color:var(--dim);line-height:1.6;margin-bottom:10px">
+        Ingresá tu setup (dirección, entrada, SL, TP) y AURUM lo valida contra estructura ICT y contexto actual.
+      </div>
+      <button onclick="openChequéaloModal()" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(201,168,76,.4);color:var(--gold);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:3px;cursor:pointer;transition:all .3s">
+        ◆ CHEQUEAR SETUP
+      </button>
+    </div>
+
     <div style="padding:0 20px 20px">
       <div style="font-size:7px;color:var(--dim);line-height:1.7;padding:10px;border:1px solid var(--border)">
         El agente usa Claude para razonar sobre el mercado, combinando análisis técnico (Polygon), contexto de sesión y memoria persistente de señales pasadas.
@@ -972,6 +984,66 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
     </div>
   </div>
 
+</div>
+
+<!-- Chequéalo modal -->
+<div id="chequéaloModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target.id==='chequéaloModal') closeChequéaloModal()">
+  <div style="background:var(--bg2);border:1px solid var(--border2);max-width:480px;width:100%;max-height:90vh;overflow-y:auto;padding:24px;position:relative">
+    <button onclick="closeChequéaloModal()" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:var(--dim2);font-size:18px;cursor:pointer">✕</button>
+    <div style="font-family:'Playfair Display',serif;font-size:16px;letter-spacing:4px;color:var(--gold);margin-bottom:4px">◆ CHEQUÉALO</div>
+    <div style="font-size:9px;letter-spacing:2px;color:var(--dim2);margin-bottom:20px">VALIDACIÓN ICT DE TU SETUP</div>
+
+    <div class="field-group">
+      <div class="field-label">DIRECCIÓN</div>
+      <div style="display:flex;gap:8px">
+        <button id="chqLongBtn" onclick="setChequéaloDir('LONG')"
+          style="flex:1;padding:10px;background:rgba(0,204,136,.08);border:1px solid rgba(0,204,136,.5);color:var(--green);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:3px;cursor:pointer;transition:all .2s">
+          ▲ LONG
+        </button>
+        <button id="chqShortBtn" onclick="setChequéaloDir('SHORT')"
+          style="flex:1;padding:10px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:3px;cursor:pointer;transition:all .2s">
+          ▼ SHORT
+        </button>
+      </div>
+      <input type="hidden" id="chqDir" value="LONG">
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="field-group" style="margin-bottom:0">
+        <div class="field-label">ENTRADA</div>
+        <input class="field-input" id="chqEntry" type="number" step="0.01" placeholder="2650.00" oninput="updateChequéaloRR()">
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <div class="field-label">STOP LOSS</div>
+        <input class="field-input" id="chqSL" type="number" step="0.01" placeholder="2640.00" oninput="updateChequéaloRR()">
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <div class="field-label">TAKE PROFIT</div>
+        <input class="field-input" id="chqTP" type="number" step="0.01" placeholder="2675.00" oninput="updateChequéaloRR()">
+      </div>
+    </div>
+
+    <div id="chqRRDisplay" style="display:none;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);margin-bottom:12px;font-size:8px;letter-spacing:2px;color:var(--dim2)">
+      RR: <span id="chqRRVal" style="color:var(--gold);font-family:'Playfair Display',serif;font-size:13px;font-weight:700">—</span>
+      <span id="chqRRNote" style="margin-left:10px;font-size:7px"></span>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">CONTEXTO / RAZÓN DEL SETUP (OPCIONAL)</div>
+      <textarea class="field-input" id="chqContext" rows="3"
+        style="resize:vertical;min-height:50px;font-family:'IBM Plex Mono';line-height:1.5"
+        placeholder="Ej: BOS alcista en 15M, OB en 2648, sesión NY killzone..."></textarea>
+    </div>
+
+    <button onclick="runChequéalo()" id="chqBtn"
+      style="width:100%;padding:12px;background:transparent;border:1px solid rgba(201,168,76,.6);color:var(--gold);font-family:'IBM Plex Mono';font-size:10px;letter-spacing:3px;cursor:pointer;margin-top:4px;transition:all .3s">
+      ◆ CHEQUEAR CON AURUM
+    </button>
+
+    <div style="font-size:7px;color:var(--dim);line-height:1.7;padding:10px;border:1px solid var(--border);margin-top:16px">
+      AURUM valida tu setup contra estructura ICT, liquidez, sesión actual y contexto de mercado. La respuesta aparece en el chat.
+    </div>
+  </div>
 </div>
 
 <!-- Pre-event modal -->
@@ -3397,6 +3469,159 @@ fetchEconomicNews();
 setInterval(() => { fetchEconomicNews(); }, 30 * 60 * 1000);
 // Update the indicator every minute even without re-fetching (countdown)
 setInterval(updateNewsIndicator, 60000);
+
+// ══════════════════════════════════════════════════════════
+// CHEQUÉALO — VALIDADOR DE SETUP ICT
+// ══════════════════════════════════════════════════════════
+function openChequéaloModal() {
+  const modal = document.getElementById('chequéaloModal');
+  modal.style.display = 'flex';
+  // Reset direction to LONG by default
+  setChequéaloDir('LONG');
+}
+
+function closeChequéaloModal() {
+  document.getElementById('chequéaloModal').style.display = 'none';
+}
+
+function setChequéaloDir(dir) {
+  document.getElementById('chqDir').value = dir;
+  const longBtn  = document.getElementById('chqLongBtn');
+  const shortBtn = document.getElementById('chqShortBtn');
+  if(dir === 'LONG') {
+    longBtn.style.background  = 'rgba(0,204,136,.15)';
+    longBtn.style.borderColor = 'rgba(0,204,136,.7)';
+    longBtn.style.color       = 'var(--green)';
+    shortBtn.style.background = 'transparent';
+    shortBtn.style.borderColor = 'var(--border)';
+    shortBtn.style.color      = 'var(--dim2)';
+  } else {
+    shortBtn.style.background  = 'rgba(204,51,68,.15)';
+    shortBtn.style.borderColor = 'rgba(204,51,68,.7)';
+    shortBtn.style.color       = 'var(--red)';
+    longBtn.style.background   = 'transparent';
+    longBtn.style.borderColor  = 'var(--border)';
+    longBtn.style.color        = 'var(--dim2)';
+  }
+  updateChequéaloRR();
+}
+
+function updateChequéaloRR() {
+  const dir   = document.getElementById('chqDir').value;
+  const entry = parseFloat(document.getElementById('chqEntry').value);
+  const sl    = parseFloat(document.getElementById('chqSL').value);
+  const tp    = parseFloat(document.getElementById('chqTP').value);
+  const display = document.getElementById('chqRRDisplay');
+  const rrVal   = document.getElementById('chqRRVal');
+  const rrNote  = document.getElementById('chqRRNote');
+
+  if(!entry || !sl || !tp) { display.style.display = 'none'; return; }
+
+  const risk   = Math.abs(entry - sl);
+  const reward = Math.abs(tp - entry);
+  if(risk === 0) { display.style.display = 'none'; return; }
+
+  const rr = reward / risk;
+
+  // Direction consistency check
+  const longOk  = dir === 'LONG'  && tp > entry && sl < entry;
+  const shortOk = dir === 'SHORT' && tp < entry && sl > entry;
+  const consistent = longOk || shortOk;
+
+  display.style.display = 'block';
+  rrVal.textContent = rr.toFixed(2) + ':1';
+
+  if(!consistent) {
+    rrVal.style.color = 'var(--red)';
+    rrNote.textContent = '⚠ Niveles inconsistentes con dirección';
+    rrNote.style.color = 'var(--red)';
+  } else if(rr >= 2.5) {
+    rrVal.style.color = 'var(--green)';
+    rrNote.textContent = '✓ Setup premium';
+    rrNote.style.color = 'var(--green)';
+  } else if(rr >= 1.5) {
+    rrVal.style.color = 'var(--gold)';
+    rrNote.textContent = '✓ RR aceptable';
+    rrNote.style.color = 'var(--gold)';
+  } else if(rr >= 1.0) {
+    rrVal.style.color = 'var(--dim2)';
+    rrNote.textContent = '⚠ RR mínimo — exige alta confianza';
+    rrNote.style.color = 'var(--dim2)';
+  } else {
+    rrVal.style.color = 'var(--red)';
+    rrNote.textContent = '✗ RR por debajo de 1:1 — setup inválido';
+    rrNote.style.color = 'var(--red)';
+  }
+}
+
+async function runChequéalo() {
+  const dir     = document.getElementById('chqDir').value;
+  const entry   = parseFloat(document.getElementById('chqEntry').value);
+  const sl      = parseFloat(document.getElementById('chqSL').value);
+  const tp      = parseFloat(document.getElementById('chqTP').value);
+  const context = document.getElementById('chqContext').value.trim();
+
+  if(!entry || !sl || !tp) {
+    alert('Completá los campos de Entrada, SL y TP antes de chequear.');
+    return;
+  }
+
+  const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
+  const instrName  = instrument === 'NDX' ? 'NAS100' : 'XAU/USD';
+  const risk       = Math.abs(entry - sl);
+  const reward     = Math.abs(tp - entry);
+  const rr         = risk > 0 ? (reward / risk).toFixed(2) : '?';
+
+  const dirSymbol = dir === 'LONG' ? '▲' : '▼';
+  let prompt = `${dirSymbol} CHEQUÉALO — ${dir} ${instrName}
+━━━━━━━━━━━━━━━━━━━━━━━━━
+Entrada : $${entry.toFixed(2)}
+SL      : $${sl.toFixed(2)}  (−$${risk.toFixed(2)})
+TP      : $${tp.toFixed(2)}  (+$${reward.toFixed(2)})
+RR      : ${rr}:1
+━━━━━━━━━━━━━━━━━━━━━━━━━${context ? '\nContexto del trader: ' + context : ''}
+
+Validá este setup con criterios ICT estrictos:
+1. ¿Los niveles son coherentes con la estructura de mercado actual?
+2. ¿Hay liquidez relevante (BSL/SSL) que justifique la dirección?
+3. ¿El RR es aceptable para las condiciones actuales?
+4. ¿La sesión actual favorece o penaliza este tipo de entrada?
+5. Veredicto final: ✓ VÁLIDO / ⚠ CONDICIONAL / ✗ INVÁLIDO — con razón concisa.`;
+
+  closeChequéaloModal();
+
+  if(isAnalyzing) {
+    addMessage('system', '⚠ Hay un análisis en curso. Esperá que termine e intentá de nuevo.');
+    return;
+  }
+
+  addMessage('user', prompt, null, null);
+  chatHistory.push({ role: 'user', content: prompt });
+  addThinking();
+  setStatus('thinking');
+
+  const btn = document.getElementById('analyzeBtn');
+  const wasDisabled = btn.disabled;
+  btn.disabled = true;
+
+  try {
+    const response = await callClaude(chatHistory);
+    removeThinking();
+    const signal = parseSignal(response);
+    const text   = cleanText(response);
+    chatHistory.push({ role: 'assistant', content: response });
+    chatHistory = trimHistoryInPairs(chatHistory, 20);
+    addMessage('agent', text, signal || null);
+    saveChatHistory();
+  } catch(e) {
+    removeThinking();
+    addMessage('system', '⚠ Error al chequear: ' + e.message);
+    console.error(e);
+  }
+
+  btn.disabled = wasDisabled;
+  setStatus('ready');
+}
 </script>
 </body>
 </html>
