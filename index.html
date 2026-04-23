@@ -2295,25 +2295,24 @@ REGLAS FINALES — NO NEGOCIABLES
 // PARSING
 // ══════════════════════════════════════════════════════════
 function parseSignal(text) {
-  // Acepta tag cerrado O sin cerrar (Claude a veces trunca)
-  const match = text.match(/<signal>([\s\S]*?)(?:<\/signal>|$)/);
-  if(!match) return null;
-  // Extrae el primer bloque JSON válido del contenido
-  const raw = match[1].trim();
-  const jsonStart = raw.indexOf('{');
-  const jsonEnd   = raw.lastIndexOf('}');
-  if(jsonStart === -1 || jsonEnd === -1) return null;
+  // Extrae <signal> aunque no esté cerrado
+  const sigIdx = text.indexOf('<signal>');
+  if(sigIdx === -1) return null;
+  const sigContent = text.slice(sigIdx + 8); // después de <signal>
+  const jStart = sigContent.indexOf('{');
+  const jEnd   = sigContent.lastIndexOf('}');
+  if(jStart === -1 || jEnd === -1) return null;
   try {
-    const sig = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-    // Merge annotations desde tag separado si no vienen en el signal
+    const sig = JSON.parse(sigContent.slice(jStart, jEnd + 1));
+    // Merge annotations desde <annotations> tag si no vienen en el signal
     if(!sig.annotations || !sig.annotations.length) {
-      const annMatch = text.match(/<annotations>([\s\S]*?)(?:<\/annotations>|$)/);
-      if(annMatch) {
-        const annRaw = annMatch[1].trim();
-        const aStart = annRaw.indexOf('[');
-        const aEnd   = annRaw.lastIndexOf(']');
+      const annIdx = text.indexOf('<annotations>');
+      if(annIdx !== -1) {
+        const annContent = text.slice(annIdx + 13); // después de <annotations>
+        const aStart = annContent.indexOf('[');
+        const aEnd   = annContent.lastIndexOf(']');
         if(aStart !== -1 && aEnd !== -1) {
-          try { sig.annotations = JSON.parse(annRaw.slice(aStart, aEnd + 1)); } catch(e) {}
+          try { sig.annotations = JSON.parse(annContent.slice(aStart, aEnd + 1)); } catch(e) {}
         }
       }
     }
@@ -2322,12 +2321,14 @@ function parseSignal(text) {
 }
 
 function cleanText(text) {
-  return text
-    .replace(/<signal>[\s\S]*?(?:<\/signal>|$)/g, '')  // tag cerrado o abierto
-    .replace(/<annotations>[\s\S]*?(?:<\/annotations>|$)/g, '')
-    .replace(/```[\s\S]*?```/g, '')                     // code blocks
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  let s = text;
+  // Dos pasos: primero intenta cerrado, luego borra hasta el final si queda abierto
+  s = s.replace(/<signal>[\s\S]*?<\/signal>/gi, '');
+  s = s.replace(/<signal>[\s\S]*/gi, '');
+  s = s.replace(/<annotations>[\s\S]*?<\/annotations>/gi, '');
+  s = s.replace(/<annotations>[\s\S]*/gi, '');
+  s = s.replace(/```[\s\S]*?```/g, '');
+  return s.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // FIX #6: trim chat history in pairs so we never leave orphan messages
