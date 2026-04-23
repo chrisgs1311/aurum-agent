@@ -757,6 +757,20 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
           <div class="market-stat"><div class="market-stat-val" id="mTrend">—</div><div class="market-stat-label">TENDENCIA</div></div>
         </div>
       </div>
+
+      <!-- DXY Correlation Block — solo XAU/USD -->
+      <div id="dxyBlock" style="margin-top:10px;padding:10px;border:1px solid var(--border);background:var(--bg3)">
+        <div style="font-size:7px;letter-spacing:3px;color:var(--dim2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          DXY · ÍNDICE DEL DÓLAR
+          <span id="dxyAge" style="font-size:6px;color:var(--dim)"></span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <div id="dxyPrice" style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--text)">—</div>
+          <div id="dxyChange" style="font-size:9px;letter-spacing:1px;color:var(--dim2)">—</div>
+        </div>
+        <div id="dxyCorrelation" style="padding:6px 8px;font-size:7px;letter-spacing:1.5px;line-height:1.7;border-left:2px solid var(--dim)">—</div>
+      </div>
+    </div>
     </div>
 
     <div class="panel-section">
@@ -1157,6 +1171,7 @@ let lastSignal      = null;
 let lastSignalTime  = null;
 let openPosition    = null; // { direction:'LONG'|'SHORT', entry:number, since:number }
 let countdownInterval = null;
+let dxyData         = null; // { price, ch, chp, timestamp }
 
 // ══════════════════════════════════════════════════════════
 // MEMORY (persistent)
@@ -1433,6 +1448,7 @@ function onInstrumentChange() {
     : `◆ Cambiado a ${instrName}. Sin historial previo — conversación nueva.`);
 
   fetchMarketData();
+  fetchDXYData();
 }
 
 // FIX #4: Lock fetchMarketData to prevent races with analysis
@@ -1592,6 +1608,128 @@ function showPriceError() {
   if(banner) {
     banner.textContent = '⚠ No se pudo obtener precio — agrega Polygon key o revisá tu conexión.';
     banner.style.display = 'block';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// DXY — ÍNDICE DEL DÓLAR (correlación inversa con XAU)
+// ══════════════════════════════════════════════════════════
+async function fetchDXYData() {
+  const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
+  const block = document.getElementById('dxyBlock');
+  if(block) block.style.display = instrument === 'XAUUSD' ? 'block' : 'none';
+  if(instrument !== 'XAUUSD') return;
+
+  // Intentar Polygon primero si hay key
+  const polygonKey = document.getElementById('polygonKey')?.value.trim();
+  if(polygonKey) {
+    try {
+      const to   = new Date();
+      const from = new Date(to - 2*24*60*60*1000);
+      const url  = `https://api.polygon.io/v2/aggs/ticker/C:DXY/range/1/hour/${from.toISOString().split('T')[0]}/${to.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=50&apiKey=${polygonKey}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if(data.results && data.results.length >= 2) {
+        const last = data.results[data.results.length - 1];
+        const prev = data.results[data.results.length - 2];
+        const ch   = last.c - prev.c;
+        const chp  = (ch / prev.c) * 100;
+        dxyData = { price: last.c, ch, chp, timestamp: Date.now() };
+        updateDXYUI();
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // Fallback: Twelve Data
+  try {
+    const res  = await fetch('https://api.twelvedata.com/quote?symbol=DXY&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
+    const data = await res.json();
+    if(data.close) {
+      const price = parseFloat(data.close);
+      const ch    = parseFloat(data.change || 0);
+      const chp   = parseFloat(data.percent_change || 0);
+      dxyData = { price, ch, chp, timestamp: Date.now() };
+      updateDXYUI();
+      return;
+    }
+  } catch(e) {}
+
+  // Segundo fallback: precio solo sin cambio
+  try {
+    const res  = await fetch('https://api.twelvedata.com/price?symbol=DXY&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
+    const data = await res.json();
+    if(data.price) {
+      dxyData = { price: parseFloat(data.price), ch: 0, chp: 0, timestamp: Date.now() };
+      updateDXYUI();
+    }
+  } catch(e) {}
+}
+
+function updateDXYUI() {
+  if(!dxyData) return;
+  const priceEl  = document.getElementById('dxyPrice');
+  const changeEl = document.getElementById('dxyChange');
+  const corrEl   = document.getElementById('dxyCorrelation');
+  const ageEl    = document.getElementById('dxyAge');
+  if(!priceEl) return;
+
+  const { price, ch, chp } = dxyData;
+  priceEl.textContent = price.toFixed(2);
+
+  const chSign = ch >= 0 ? '+' : '';
+  const arrow  = ch > 0 ? '↑' : ch < 0 ? '↓' : '→';
+  changeEl.textContent = `${arrow} ${chSign}${ch.toFixed(2)} (${chSign}${chp.toFixed(2)}%)`;
+  changeEl.style.color = ch > 0 ? 'var(--red)' : ch < 0 ? 'var(--green)' : 'var(--dim2)';
+
+  // Correlación inversa DXY ↔ XAU
+  let corrText = '', corrColor = 'var(--dim)', borderColor = 'var(--dim)';
+  const absChp = Math.abs(chp);
+
+  if(ch > 0) {
+    if(absChp >= 0.5) {
+      corrText  = '🔴 DXY FUERTE ↑ — Presión bajista significativa en XAU. El dólar está absorbiendo flujo de capitales. Sesgá SHORT o esperá corrección.';
+      corrColor = 'var(--red)';
+      borderColor = 'var(--red)';
+    } else if(absChp >= 0.2) {
+      corrText  = '🟡 DXY AL ALZA — Viento en contra para XAU. Preferí setups SHORT o exigí más confluencias para LONG.';
+      corrColor = 'var(--gold)';
+      borderColor = 'rgba(201,168,76,.6)';
+    } else {
+      corrText  = '⚪ DXY levemente positivo — Impacto neutro en XAU. Otros factores dominan.';
+      corrColor = 'var(--dim2)';
+    }
+  } else if(ch < 0) {
+    if(absChp >= 0.5) {
+      corrText  = '🟢 DXY DÉBIL ↓ — Soporte alcista fuerte en XAU. El dólar pierde fuerza, el oro se beneficia. Sesgá LONG.';
+      corrColor = 'var(--green)';
+      borderColor = 'rgba(0,204,136,.6)';
+    } else if(absChp >= 0.2) {
+      corrText  = '🟢 DXY a la baja — Viento a favor para XAU. Favorece setups LONG.';
+      corrColor = 'var(--green)';
+      borderColor = 'rgba(0,204,136,.4)';
+    } else {
+      corrText  = '⚪ DXY levemente negativo — Impacto neutro en XAU. Usá estructura técnica como guía principal.';
+      corrColor = 'var(--dim2)';
+    }
+  } else {
+    corrText  = '⚪ DXY sin movimiento — Correlación neutra. Analizá estructura ICT independientemente.';
+    corrColor = 'var(--dim2)';
+  }
+
+  // Contexto de nivel del DXY
+  let levelNote = '';
+  if(price > 106)      levelNote = ' DXY en zona alta histórica (>106) — dólar fuerte estructuralmente.';
+  else if(price > 103) levelNote = ' DXY en zona media-alta.';
+  else if(price < 100) levelNote = ' DXY bajo 100 — debilidad estructural del dólar, favorable para XAU a largo plazo.';
+
+  corrEl.textContent  = corrText + levelNote;
+  corrEl.style.color  = corrColor;
+  corrEl.style.borderLeftColor = borderColor;
+
+  if(ageEl) {
+    const mins = Math.round((Date.now() - dxyData.timestamp) / 60000);
+    ageEl.textContent = mins < 1 ? 'ahora' : `hace ${mins}m`;
   }
 }
 
@@ -1880,6 +2018,7 @@ Día de hoy: ${s.dateStr.split(',')[0]}.
 CONTEXTO ACTUAL:
 - Instrumento: ${instrName}
 - Precio: ${price} | Cambio: ${ch}
+${instrument === 'XAUUSD' && dxyData ? `- DXY: ${dxyData.price.toFixed(2)} (${dxyData.ch>=0?'+':''}${dxyData.ch.toFixed(2)}, ${dxyData.ch>=0?'+':''}${dxyData.chp.toFixed(2)}%) — ${dxyData.ch > 0.3 ? 'FORTALEZA DEL DÓLAR: presión bajista sobre XAU' : dxyData.ch < -0.3 ? 'DEBILIDAD DEL DÓLAR: soporte alcista para XAU' : 'DXY neutro'}` : ''}
 - Hora Orlando: ${s.timeStr} | Sesión: ${sessionDesc}
 - Timeframe análisis: ${tf} | RR objetivo: ${rr}:1 (${rrCfg.note})
 ${openPosition ? `- POSICIÓN ABIERTA: ${openPosition.direction} desde $${openPosition.entry}${openPosition.since ? ` (hace ${Math.floor((Date.now()-openPosition.since)/60000)} min)` : ''}. PRIORIDAD: gestión de la posición existente. ¿Mantener? ¿Mover SL a BE? ¿Salir? Analiza riesgo de la posición abierta antes de buscar nuevas entradas.` : '- SIN POSICIÓN ABIERTA'}
@@ -3555,6 +3694,8 @@ document.getElementById('instrumentSelect').addEventListener('change', () => {
 
 fetchMarketData();
 setInterval(fetchMarketData, 30000);
+fetchDXYData();
+setInterval(fetchDXYData, 5 * 60 * 1000);
 updateMemoryUI();
 loadChatHistory();
 
