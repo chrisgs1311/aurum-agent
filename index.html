@@ -747,6 +747,9 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         <div class="market-label" id="marketLabel">XAU/USD · PRECIO ACTUAL</div>
         <div class="market-price" id="marketPrice">—</div>
         <div class="market-change" id="marketChange" style="color:var(--dim2)">Cargando...</div>
+        <div id="dataQualityBanner" style="display:none;margin-top:6px;padding:6px 8px;background:rgba(204,51,68,.1);border:1px solid rgba(204,51,68,.35);font-size:7px;letter-spacing:1.5px;color:var(--red);line-height:1.6">
+          ⚠ SIN VELAS — Solo precio de referencia. Análisis técnico limitado.
+        </div>
         <div class="market-stats">
           <div class="market-stat"><div class="market-stat-val" id="mATR">—</div><div class="market-stat-label">ATR</div></div>
           <div class="market-stat"><div class="market-stat-val" id="mRSI">—</div><div class="market-stat-label">RSI</div></div>
@@ -893,6 +896,31 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
 
     <div style="padding:0 20px 16px">
       <div style="font-size:8px;letter-spacing:4px;color:var(--dim2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        POSICIÓN ACTUAL
+      </div>
+      <div style="display:flex;gap:5px;margin-bottom:8px">
+        <button id="posNoneBtn" onclick="setPosition('none')"
+          style="flex:1;padding:6px 4px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.5);color:var(--gold);font-family:'IBM Plex Mono';font-size:7px;letter-spacing:1px;cursor:pointer;transition:all .2s">
+          — FUERA
+        </button>
+        <button id="posLongBtn" onclick="setPosition('LONG')"
+          style="flex:1;padding:6px 4px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:7px;letter-spacing:1px;cursor:pointer;transition:all .2s">
+          ▲ LONG
+        </button>
+        <button id="posShortBtn" onclick="setPosition('SHORT')"
+          style="flex:1;padding:6px 4px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:7px;letter-spacing:1px;cursor:pointer;transition:all .2s">
+          ▼ SHORT
+        </button>
+      </div>
+      <div id="posEntryWrap" style="display:none;margin-bottom:6px">
+        <input class="field-input" id="posEntry" type="number" step="0.01" placeholder="Precio de entrada..."
+          oninput="updatePositionDisplay()" style="font-size:8px">
+      </div>
+      <div id="posStatusBar" style="display:none;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);font-size:7px;letter-spacing:1.5px;color:var(--dim2);line-height:1.6"></div>
+    </div>
+
+    <div style="padding:0 20px 16px">
+      <div style="font-size:8px;letter-spacing:4px;color:var(--dim2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
         MODO PRE-EVENTO
       </div>
       <div style="font-size:7px;color:var(--dim);line-height:1.6;margin-bottom:10px">
@@ -976,6 +1004,9 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         <div class="mem-stat"><div class="mem-val" style="color:var(--green)">—</div><div class="mem-label">WINS</div></div>
         <div class="mem-stat"><div class="mem-val" style="color:var(--red)">—</div><div class="mem-label">LOSSES</div></div>
         <div class="mem-stat"><div class="mem-val" style="color:var(--gold)">—</div><div class="mem-label">WIN RATE</div></div>
+      </div>
+      <div id="memoryExtended" style="margin-top:10px;padding:8px;border:1px solid var(--border);background:var(--bg3)">
+        <div style="font-size:7px;color:var(--dim);text-align:center;padding:6px">Registra outcomes para ver estadísticas</div>
       </div>
     </div>
     <div class="stats-row">
@@ -1114,6 +1145,8 @@ let lastAutoSignalTime = 0; // NEW: timestamp-based dedup
 let lastAutoSignalAction = null;
 let lastSignal      = null;
 let lastSignalTime  = null;
+let openPosition    = null; // { direction:'LONG'|'SHORT', entry:number, since:number }
+let countdownInterval = null;
 
 // ══════════════════════════════════════════════════════════
 // MEMORY (persistent)
@@ -1237,16 +1270,40 @@ function clearMemory() {
 function updateMemoryUI() {
   const mem = loadMemory();
   const total = mem.wins + mem.losses;
-  const wr = total > 0 ? ((mem.wins/total)*100).toFixed(0)+'%' : '—';
+  const wr = total > 0 ? ((mem.wins/total)*100).toFixed(0) : null;
+  const wrText = wr !== null ? wr + '%' : '—';
+  const wrColor = wr !== null ? (parseInt(wr) >= 60 ? 'var(--green)' : parseInt(wr) >= 45 ? 'var(--gold)' : 'var(--red)') : 'var(--gold)';
+
   const el = document.getElementById('memoryStats');
   if(el) {
     el.innerHTML = `
       <div class="mem-stat"><div class="mem-val">${mem.totalAnalysis}</div><div class="mem-label">ANÁLISIS</div></div>
       <div class="mem-stat"><div class="mem-val" style="color:var(--green)">${mem.wins}</div><div class="mem-label">WINS</div></div>
       <div class="mem-stat"><div class="mem-val" style="color:var(--red)">${mem.losses}</div><div class="mem-label">LOSSES</div></div>
-      <div class="mem-stat"><div class="mem-val" style="color:var(--gold)">${wr}</div><div class="mem-label">WIN RATE</div></div>
+      <div class="mem-stat"><div class="mem-val" style="color:${wrColor}">${wrText}</div><div class="mem-label">WIN RATE</div></div>
     `;
   }
+
+  // Extended stats panel
+  const extEl = document.getElementById('memoryExtended');
+  if(!extEl) return;
+  const bestHours   = getBestHours(mem);
+  const topPatterns = getTopPatterns(mem);
+
+  if(total < 2) {
+    extEl.innerHTML = `<div style="font-size:7px;color:var(--dim);text-align:center;padding:6px">Registra outcomes para ver estadísticas</div>`;
+    return;
+  }
+
+  extEl.innerHTML = `
+    <div style="margin-bottom:6px">
+      <div style="font-size:7px;letter-spacing:2px;color:var(--dim2);margin-bottom:4px">MEJORES HORAS (NY)</div>
+      <div style="font-size:8px;color:var(--gold);line-height:1.7">${bestHours}</div>
+    </div>
+    <div>
+      <div style="font-size:7px;letter-spacing:2px;color:var(--dim2);margin-bottom:4px">PATRONES EXITOSOS</div>
+      <div style="font-size:8px;color:var(--gold);line-height:1.7">${topPatterns}</div>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1442,12 +1499,12 @@ async function fetchFromPolygon(apiKey, instrument) {
           const spotRes = await fetch('https://api.gold-api.com/price/XAU');
           const spotD   = await spotRes.json();
           if(spotD?.price) {
-            marketData = { price: parseFloat(spotD.price), ch: parseFloat(spotD.ch||ch), chp: parseFloat(spotD.chp||chp) };
-          } else { marketData = { price: last.c, ch, chp }; }
-        } catch(e) { marketData = { price: last.c, ch, chp }; }
+            marketData = { price: parseFloat(spotD.price), ch: parseFloat(spotD.ch||ch), chp: parseFloat(spotD.chp||chp), isFallback: false };
+          } else { marketData = { price: last.c, ch, chp, isFallback: false }; }
+        } catch(e) { marketData = { price: last.c, ch, chp, isFallback: false }; }
       } else {
         // NDX — use Polygon's last candle close (real I:NDX data)
-        marketData = { price: last.c, ch, chp };
+        marketData = { price: last.c, ch, chp, isFallback: false };
       }
 
       const statusEl = document.getElementById('polygonStatus');
@@ -1497,14 +1554,24 @@ async function fetchFromFallback(instrument) {
   try {
     const res = await fetch('https://api.gold-api.com/price/XAU');
     const d   = await res.json();
-    if(d.price) { marketData = { price: parseFloat(d.price), ch: parseFloat(d.ch||0), chp: parseFloat(d.chp||0) }; updateMarketUI(); }
-  } catch(e) {
-    try {
-      const r2 = await fetch('https://api.twelvedata.com/price?symbol=XAU/USD&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
-      const d2 = await r2.json();
-      if(d2.price) { marketData = { price: parseFloat(d2.price), ch:0, chp:0 }; updateMarketUI(); }
-    } catch(e2) {}
-  }
+    if(d.price) {
+      marketData = { price: parseFloat(d.price), ch: parseFloat(d.ch||0), chp: parseFloat(d.chp||0), isFallback: true };
+      updateMarketUI();
+      return;
+    }
+  } catch(e) {}
+  try {
+    const r2 = await fetch('https://api.twelvedata.com/price?symbol=XAU/USD&apikey=dd53883de1a84cccaf65bf7f4e7a4756');
+    const d2 = await r2.json();
+    if(d2.price) { marketData = { price: parseFloat(d2.price), ch:0, chp:0, isFallback: true }; updateMarketUI(); }
+  } catch(e2) {}
+}
+
+function updateDataQualityBanner() {
+  const banner = document.getElementById('dataQualityBanner');
+  if(!banner) return;
+  const isFallback = !marketData || marketData.isFallback;
+  banner.style.display = isFallback ? 'block' : 'none';
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1589,6 +1656,8 @@ function getOrlandoSession() {
 
 function updateMarketUI() {
   if(!marketData) return;
+  updateDataQualityBanner();
+  if(openPosition) updatePositionDisplay();
   const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
   document.getElementById('marketPrice').textContent = '$' + marketData.price.toFixed(2);
   const ch = marketData.ch, chp = marketData.chp;
@@ -1777,6 +1846,7 @@ CONTEXTO ACTUAL:
 - Precio: ${price} | Cambio: ${ch}
 - Hora Orlando: ${s.timeStr} | Sesión: ${sessionDesc}
 - Timeframe análisis: ${tf} | RR objetivo: ${rr}:1 (${rrCfg.note})
+${openPosition ? `- POSICIÓN ABIERTA: ${openPosition.direction} desde $${openPosition.entry}${openPosition.since ? ` (hace ${Math.floor((Date.now()-openPosition.since)/60000)} min)` : ''}. PRIORIDAD: gestión de la posición existente. ¿Mantener? ¿Mover SL a BE? ¿Salir? Analiza riesgo de la posición abierta antes de buscar nuevas entradas.` : '- SIN POSICIÓN ABIERTA'}
 
 CONTEXTO DE SESIÓN:
 ${sessionBias}
@@ -2486,13 +2556,34 @@ function handleImageUpload(event) {
   files.forEach((file, idx) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      const parts = dataUrl.split(',');
-      const mediaType = parts[0].match(/data:(.*?);/)[1] || 'image/jpeg';
-      const base64 = parts[1];
+      const originalUrl = e.target.result;
       const tf = getDefaultTF(idx, files.length);
-      pendingImages.push({ base64, mediaType, dataUrl, name: file.name, tf });
-      renderImagePreviews();
+      const MAX_BYTES = 800 * 1024; // 800 KB
+
+      const finalize = (dataUrl, sizeKB) => {
+        const parts = dataUrl.split(',');
+        const mediaType = parts[0].match(/data:(.*?);/)[1] || 'image/jpeg';
+        const base64 = parts[1];
+        pendingImages.push({ base64, mediaType, dataUrl, name: file.name, tf, sizeKB });
+        renderImagePreviews();
+      };
+
+      if(file.size > MAX_BYTES) {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const scale = Math.sqrt(MAX_BYTES / file.size);
+          canvas.width  = Math.round(img.width  * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.82);
+          const kb = Math.round(compressed.length * 0.75 / 1024);
+          finalize(compressed, kb);
+        };
+        img.src = originalUrl;
+      } else {
+        finalize(originalUrl, Math.round(file.size / 1024));
+      }
     };
     reader.readAsDataURL(file);
   });
@@ -2508,15 +2599,18 @@ function renderImagePreviews() {
   }
   container.style.display = 'flex';
   const tfs = ['1M','5M','15M','30M','1H','4H','1D','LTF','MTF','HTF'];
-  container.innerHTML = pendingImages.map((img, i) => `
+  container.innerHTML = pendingImages.map((img, i) => {
+    const sizeColor = img.sizeKB > 600 ? 'var(--red)' : img.sizeKB > 300 ? 'var(--gold)' : 'var(--green)';
+    return `
     <div style="position:relative;flex-shrink:0;display:flex;flex-direction:column;gap:2px">
       <img src="${img.dataUrl}" style="width:70px;height:50px;object-fit:cover;border:1px solid var(--border2);display:block">
+      <div style="font-size:6px;text-align:center;color:${sizeColor};letter-spacing:1px">${img.sizeKB || '?'}KB</div>
       <select onchange="setImageTF(${i}, this.value)" style="width:70px;background:var(--bg3);border:1px solid var(--border);color:var(--gold);font-family:'IBM Plex Mono';font-size:8px;padding:1px 2px;text-align:center;cursor:pointer">
         ${tfs.map(t => `<option value="${t}" ${t===img.tf?'selected':''}>${t}</option>`).join('')}
       </select>
       <button onclick="removeImage(${i})" style="position:absolute;top:1px;right:1px;background:rgba(0,0,0,.85);border:none;color:var(--gold);cursor:pointer;font-size:9px;padding:1px 4px;line-height:1">✕</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function setImageTF(idx, tf) {
@@ -2806,7 +2900,6 @@ function exportChat() {
 // ══════════════════════════════════════════════════════════
 // AUTO-TRADING (with timestamp-based dedup — FIX #1)
 // ══════════════════════════════════════════════════════════
-let countdownInterval = null;
 let nextRunIn = 0;
 
 function toggleAutoTrading() {
@@ -2860,11 +2953,30 @@ async function runAutoAnalysis() {
   await fetchMarketData(true);
   const minConf = parseInt(document.getElementById('autoMinConf').value);
   nextRunIn = parseInt(document.getElementById('autoInterval').value) * 60 * 1000;
+
+  // Chequear noticia inminente antes de analizar
+  const newsRisk = getImmediateNewsRisk();
+  if(newsRisk && newsRisk.severity === 'CRITICAL') {
+    const container = document.getElementById('messages');
+    const warn = document.createElement('div');
+    warn.style.cssText = 'text-align:center;padding:8px 12px;font-size:8px;letter-spacing:2px;color:var(--red);border:1px solid rgba(204,51,68,.35);background:rgba(204,51,68,.08);margin:6px 0';
+    const label = newsRisk.minutesAway >= 0
+      ? `⚠ NOTICIA EN ${newsRisk.minutesAway} MIN: ${newsRisk.event.title}`
+      : `⚠ NOTICIA RECIENTE (hace ${Math.abs(newsRisk.minutesAway)} min): ${newsRisk.event.title}`;
+    warn.textContent = label + ' — AUTO-TRADING PAUSADO';
+    container.appendChild(warn);
+    container.scrollTop = container.scrollHeight;
+    stopAutoTrading();
+    addMessage('system', `⚠ Auto-trading pausado automáticamente por noticia de alto impacto: ${newsRisk.event.title}`);
+    return;
+  }
+
   autoCount++;
   document.getElementById('autoCountLabel').textContent = autoCount + ' análisis';
   const instrument = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
   const instrName = instrument === 'NDX' ? 'NAS100' : 'XAU/USD';
-  const prompt = `[AUTO-ANÁLISIS #${autoCount}] Analiza ${instrName} ahora. Precio: $${marketData?.price?.toFixed(2) || '?'}. Dame señal si hay setup válido con confianza ≥${minConf}%. Si no hay setup claro, responde ESPERAR.`;
+  const newsNote = newsRisk ? ` ⚠ NOTICIA EN ${newsRisk.minutesAway} MIN (${newsRisk.event.title}), sé conservador.` : '';
+  const prompt = `[AUTO-ANÁLISIS #${autoCount}] Analiza ${instrName} ahora. Precio: $${marketData?.price?.toFixed(2) || '?'}.${newsNote} Dame señal si hay setup válido con confianza ≥${minConf}%. Si no hay setup claro, responde ESPERAR.`;
   isAnalyzing = true;
   setStatus('thinking');
   const container = document.getElementById('messages');
@@ -3469,6 +3581,73 @@ fetchEconomicNews();
 setInterval(() => { fetchEconomicNews(); }, 30 * 60 * 1000);
 // Update the indicator every minute even without re-fetching (countdown)
 setInterval(updateNewsIndicator, 60000);
+
+// ══════════════════════════════════════════════════════════
+// POSICIÓN ACTUAL
+// ══════════════════════════════════════════════════════════
+function setPosition(dir) {
+  const noneBtn  = document.getElementById('posNoneBtn');
+  const longBtn  = document.getElementById('posLongBtn');
+  const shortBtn = document.getElementById('posShortBtn');
+  const entryWrap = document.getElementById('posEntryWrap');
+  const statusBar = document.getElementById('posStatusBar');
+
+  // Reset all buttons
+  [noneBtn, longBtn, shortBtn].forEach(b => {
+    b.style.background   = 'transparent';
+    b.style.borderColor  = 'var(--border)';
+    b.style.color        = 'var(--dim2)';
+  });
+
+  if(dir === 'none') {
+    openPosition = null;
+    noneBtn.style.background  = 'rgba(201,168,76,.1)';
+    noneBtn.style.borderColor = 'rgba(201,168,76,.5)';
+    noneBtn.style.color       = 'var(--gold)';
+    entryWrap.style.display   = 'none';
+    statusBar.style.display   = 'none';
+    return;
+  }
+
+  const entry = parseFloat(document.getElementById('posEntry')?.value);
+  openPosition = { direction: dir, entry: entry || null, since: Date.now() };
+
+  if(dir === 'LONG') {
+    longBtn.style.background  = 'rgba(0,204,136,.15)';
+    longBtn.style.borderColor = 'rgba(0,204,136,.6)';
+    longBtn.style.color       = 'var(--green)';
+  } else {
+    shortBtn.style.background  = 'rgba(204,51,68,.15)';
+    shortBtn.style.borderColor = 'rgba(204,51,68,.6)';
+    shortBtn.style.color       = 'var(--red)';
+  }
+
+  entryWrap.style.display = 'block';
+  updatePositionDisplay();
+}
+
+function updatePositionDisplay() {
+  if(!openPosition) return;
+  const entryVal = parseFloat(document.getElementById('posEntry')?.value);
+  if(entryVal) openPosition.entry = entryVal;
+
+  const statusBar = document.getElementById('posStatusBar');
+  if(!statusBar) return;
+  statusBar.style.display = 'block';
+
+  if(!openPosition.entry || !marketData?.price) {
+    statusBar.textContent = `${openPosition.direction} activo — ingresá entrada para ver P&L`;
+    statusBar.style.color = 'var(--dim2)';
+    return;
+  }
+
+  const diff = openPosition.direction === 'LONG'
+    ? marketData.price - openPosition.entry
+    : openPosition.entry - marketData.price;
+  const color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+  const sign  = diff >= 0 ? '+' : '';
+  statusBar.innerHTML = `${openPosition.direction} desde $${openPosition.entry.toFixed(2)} · P&L: <span style="color:${color};font-weight:700">${sign}$${diff.toFixed(2)}</span>`;
+}
 
 // ══════════════════════════════════════════════════════════
 // CHEQUÉALO — VALIDADOR DE SETUP ICT
