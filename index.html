@@ -386,11 +386,25 @@ body.theme-silver .analyze-btn:hover { box-shadow: 0 0 20px rgba(184,194,204,.18
 }
 .warning-banner strong { color: var(--red); font-weight: 700; }
 
-.center-panel { display: flex; flex-direction: column; background: var(--bg); overflow: hidden; min-height: 0; }
+.center-panel {
+  display: flex; flex-direction: column;
+  background: var(--bg); overflow: hidden; min-height: 0;
+  align-items: center;          /* centra el chat-box horizontalmente */
+  padding: 0 16px 16px;
+}
+.chat-box {
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 820px;
+  flex: 1; min-height: 0;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  overflow: hidden;
+}
 .chat-header {
-  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
-  background: rgba(8,6,0,.95);
+  background: var(--bg3);
+  flex-shrink: 0;
 }
 .chat-title {
   font-size: 10px;
@@ -1029,6 +1043,7 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
 
   <!-- CENTER — Chat -->
   <div class="center-panel">
+    <div class="chat-box">
     <div class="chat-header">
       <div class="chat-title">CONVERSACIÓN CON EL AGENTE</div>
       <div class="chat-actions">
@@ -1061,6 +1076,7 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">→</button>
       </div>
     </div>
+    </div><!-- /chat-box -->
   </div>
 
   <!-- RIGHT — History -->
