@@ -824,7 +824,6 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
         <div id="calendarEvents" style="font-size:7px;color:var(--dim2);letter-spacing:1px">Cargando...</div>
       </div>
     </div>
-    </div>
 
     <div class="panel-section">
       <div class="section-title">CONFIGURACIÓN</div>
@@ -2610,8 +2609,36 @@ function parseSignal(text) {
         }
       }
     }
-    return sig;
+    return validateSignal(sig);
   } catch(e) { return null; }
+}
+
+// Rechaza signals malformados: action inválida, niveles no numéricos,
+// geometría inconsistente (long con SL arriba, etc) o confidence fuera de rango.
+// Devuelve el signal saneado o null si no pasa validación.
+function validateSignal(sig) {
+  if(!sig || typeof sig !== 'object') return null;
+  const action = String(sig.action || '').toUpperCase();
+  if(!['COMPRAR','VENDER','ESPERAR'].includes(action)) return null;
+  sig.action = action;
+
+  if(action === 'ESPERAR') return sig;
+
+  const entry = Number(sig.entry);
+  const sl    = Number(sig.sl);
+  const tp    = Number(sig.tp ?? sig.tp2);
+  if(!isFinite(entry) || !isFinite(sl) || !isFinite(tp)) return null;
+  if(entry <= 0 || sl <= 0 || tp <= 0) return null;
+  if(entry === sl || entry === tp) return null;
+
+  if(action === 'COMPRAR' && !(tp > entry && entry > sl)) return null;
+  if(action === 'VENDER'  && !(tp < entry && entry < sl)) return null;
+
+  const conf = Number(sig.confidence);
+  if(isFinite(conf)) sig.confidence = Math.max(0, Math.min(100, conf));
+  else sig.confidence = 0;
+
+  return sig;
 }
 
 function cleanText(text) {
@@ -3177,8 +3204,10 @@ PROTOCOLO JERÁRQUICO OBLIGATORIO:
 
   const annotationRequest = `\n\n━━━ COORDENADAS PARA ANOTACIÓN (FÓRMULA OBLIGATORIA) ━━━
 
-En el JSON <signal>, AGREGA un campo "annotations" con coordenadas RELATIVAS (0.0 a 1.0)
-para el GRÁFICO DE MENOR TIMEFRAME (el último que te envié — donde se ejecuta el entry).
+DESPUÉS del JSON <signal>, agrega un bloque <annotations>...</annotations> con un array
+de objetos con coordenadas RELATIVAS (0.0 a 1.0) para el GRÁFICO DE MENOR TIMEFRAME
+(el último que te envié — donde se ejecuta el entry).
+NO pongas el array dentro de <signal>; debe ir como tag separado al final.
 
 ⚠ REGLA CRÍTICA: NO estimes las coordenadas Y "a ojo". CALCULALAS matemáticamente.
 
