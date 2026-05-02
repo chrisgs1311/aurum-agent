@@ -2580,20 +2580,29 @@ REGLAS FINALES — NO NEGOCIABLES
 // PARSING
 // ══════════════════════════════════════════════════════════
 function parseSignal(text) {
-  // Extrae <signal> aunque no esté cerrado
   const sigIdx = text.indexOf('<signal>');
   if(sigIdx === -1) return null;
-  const sigContent = text.slice(sigIdx + 8); // después de <signal>
+  // Acota la búsqueda al bloque del signal: </signal> si existe, o antes de <annotations>,
+  // para que lastIndexOf('}') no agarre la llave de cierre de una anotación posterior.
+  let sigContent = text.slice(sigIdx + 8);
+  const closeIdx = sigContent.indexOf('</signal>');
+  if(closeIdx !== -1) {
+    sigContent = sigContent.slice(0, closeIdx);
+  } else {
+    const annOpen = sigContent.indexOf('<annotations>');
+    if(annOpen !== -1) sigContent = sigContent.slice(0, annOpen);
+  }
   const jStart = sigContent.indexOf('{');
   const jEnd   = sigContent.lastIndexOf('}');
   if(jStart === -1 || jEnd === -1) return null;
   try {
     const sig = JSON.parse(sigContent.slice(jStart, jEnd + 1));
-    // Merge annotations desde <annotations> tag si no vienen en el signal
     if(!sig.annotations || !sig.annotations.length) {
       const annIdx = text.indexOf('<annotations>');
       if(annIdx !== -1) {
-        const annContent = text.slice(annIdx + 13); // después de <annotations>
+        let annContent = text.slice(annIdx + 13);
+        const annClose = annContent.indexOf('</annotations>');
+        if(annClose !== -1) annContent = annContent.slice(0, annClose);
         const aStart = annContent.indexOf('[');
         const aEnd   = annContent.lastIndexOf(']');
         if(aStart !== -1 && aEnd !== -1) {
