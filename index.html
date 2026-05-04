@@ -2670,7 +2670,6 @@ function cleanText(text) {
   s = s.replace(/<signal>[\s\S]*/gi, '');
   s = s.replace(/<annotations>[\s\S]*?<\/annotations>/gi, '');
   s = s.replace(/<annotations>[\s\S]*/gi, '');
-  s = s.replace(/```[\s\S]*?```/g, '');
   return s.replace(/\n{3,}/g, '\n\n').trim();
 }
 

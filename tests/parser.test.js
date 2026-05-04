@@ -152,5 +152,29 @@ Después.`);
   eq(out.includes('signal'), false);
 });
 
+test('preserva bloques de código markdown (regresión: secciones vacías)', () => {
+  const out = cleanText(`## SÍ LO VEO
+
+---
+
+\`\`\`
+PDL $4503 roto. Cierre confirma quiebre.
+Estructura cambia a bajista.
+\`\`\`
+
+## SITUACIÓN ACTUAL
+
+---
+
+\`\`\`
+Precio en retrace hacia OB.
+\`\`\``);
+  truthy(out.includes('PDL $4503 roto'), 'contenido del primer bloque debe sobrevivir');
+  truthy(out.includes('Estructura cambia'), 'segunda línea del primer bloque');
+  truthy(out.includes('Precio en retrace'), 'contenido del segundo bloque');
+  truthy(out.includes('SÍ LO VEO'), 'headers se mantienen');
+  truthy(out.includes('SITUACIÓN ACTUAL'), 'segundo header se mantiene');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);
