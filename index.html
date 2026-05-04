@@ -997,6 +997,18 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
 
     <div style="padding:0 20px 16px">
       <div style="font-size:8px;letter-spacing:4px;color:var(--dim2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        REPLAY HISTÓRICO
+      </div>
+      <div style="font-size:7px;color:var(--dim);line-height:1.6;margin-bottom:10px">
+        Elegí una fecha pasada y mirá cómo el agente hubiera reaccionado. Avanzá vela por vela.
+      </div>
+      <button onclick="openReplayModal()" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(0,204,136,.4);color:var(--green);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:3px;cursor:pointer;transition:all .3s">
+        ⏮ ABRIR REPLAY
+      </button>
+    </div>
+
+    <div style="padding:0 20px 16px">
+      <div style="font-size:8px;letter-spacing:4px;color:var(--dim2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
         MODO PRE-EVENTO
       </div>
       <div style="font-size:7px;color:var(--dim);line-height:1.6;margin-bottom:10px">
@@ -1149,6 +1161,65 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
 
     <div style="font-size:7px;color:var(--dim);line-height:1.7;padding:10px;border:1px solid var(--border);margin-top:16px">
       AURUM valida tu setup contra estructura ICT, liquidez, sesión actual y contexto de mercado. La respuesta aparece en el chat.
+    </div>
+  </div>
+</div>
+
+<!-- Replay histórico modal -->
+<div id="replayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target.id==='replayModal') closeReplayModal()">
+  <div style="background:var(--bg2);border:1px solid var(--border2);max-width:920px;width:100%;max-height:92vh;overflow-y:auto;padding:24px;position:relative">
+    <button onclick="closeReplayModal()" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:var(--dim2);font-size:18px;cursor:pointer">✕</button>
+    <div style="font-family:'Playfair Display',serif;font-size:16px;letter-spacing:4px;color:var(--green);margin-bottom:4px">⏮ REPLAY HISTÓRICO</div>
+    <div style="font-size:9px;letter-spacing:2px;color:var(--dim2);margin-bottom:20px">SIMULAR REACCIÓN DEL AGENTE EN UNA FECHA PASADA</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div>
+        <div style="font-size:7px;letter-spacing:2px;color:var(--dim);margin-bottom:4px">INSTRUMENTO</div>
+        <select class="field-select" id="replayInstrument" style="font-size:9px">
+          <option value="XAUUSD">XAU/USD — Oro</option>
+          <option value="NDX">NAS100</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:7px;letter-spacing:2px;color:var(--dim);margin-bottom:4px">TIMEFRAME</div>
+        <select class="field-select" id="replayTF" style="font-size:9px">
+          <option value="5min">5M</option>
+          <option value="15min" selected>15M</option>
+          <option value="1h">1H</option>
+          <option value="4h">4H</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:7px;letter-spacing:2px;color:var(--dim);margin-bottom:4px">FECHA ANCLA</div>
+        <input class="field-input" id="replayDate" type="date" style="font-size:9px">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <button onclick="loadReplayCandles()" id="replayLoadBtn" style="flex:1;padding:10px;background:var(--bg3);border:1px solid rgba(0,204,136,.4);color:var(--green);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:3px;cursor:pointer">
+        ◆ CARGAR VELAS
+      </button>
+      <div id="replayStatus" style="flex:1;padding:10px;font-size:8px;letter-spacing:1.5px;color:var(--dim2);border:1px solid var(--border);background:var(--bg3);text-align:center">Sin datos cargados</div>
+    </div>
+
+    <div style="border:1px solid var(--border);background:var(--bg3);padding:8px;margin-bottom:14px">
+      <canvas id="replayCanvas" width="880" height="440" style="display:block;width:100%;background:#0d0d0d"></canvas>
+    </div>
+
+    <div style="display:grid;grid-template-columns:auto auto auto 1fr auto;gap:8px;align-items:center;margin-bottom:10px">
+      <button onclick="replayStep(-10)" id="replayBack10" disabled style="padding:8px 12px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:2px;cursor:pointer">«« -10</button>
+      <button onclick="replayStep(-1)" id="replayBack1" disabled style="padding:8px 12px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:2px;cursor:pointer">« -1</button>
+      <button onclick="replayStep(1)" id="replayFwd1" disabled style="padding:8px 12px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:2px;cursor:pointer">+1 »</button>
+      <div id="replayPos" style="font-size:8px;letter-spacing:2px;color:var(--dim2);text-align:center"></div>
+      <button onclick="replayStep(10)" id="replayFwd10" disabled style="padding:8px 12px;background:transparent;border:1px solid var(--border);color:var(--dim2);font-family:'IBM Plex Mono';font-size:9px;letter-spacing:2px;cursor:pointer">+10 »»</button>
+    </div>
+
+    <button onclick="analyzeReplay()" id="replayAnalyzeBtn" disabled style="width:100%;padding:12px;background:transparent;border:1px solid rgba(201,168,76,.5);color:var(--gold);font-family:'IBM Plex Mono';font-size:10px;letter-spacing:4px;cursor:pointer">
+      ⚡ ANALIZAR ESTE PUNTO CON AURUM
+    </button>
+
+    <div style="font-size:7px;color:var(--dim);line-height:1.7;padding:10px;border:1px solid var(--border);margin-top:14px">
+      Polygon devuelve hasta 60 días de historia. Avanzá la "vela final visible" con los botones para ver cómo evolucionó la estructura. La señal del agente queda en el chat con el marcador <span style="color:var(--green)">[REPLAY]</span>.
     </div>
   </div>
 </div>
@@ -4496,6 +4567,211 @@ Validá este setup con criterios ICT estrictos:
 
   btn.disabled = wasDisabled;
   setStatus('ready');
+}
+
+// ══════════════════════════════════════════════════════════
+// REPLAY HISTÓRICO
+// ══════════════════════════════════════════════════════════
+let replayState = {
+  candles: [],
+  currentIdx: 0,
+  visibleCount: 80,
+  instrument: 'XAUUSD',
+  tf: '15min'
+};
+
+function openReplayModal() {
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 24*60*60*1000);
+  document.getElementById('replayDate').value = yesterday.toISOString().split('T')[0];
+  document.getElementById('replayDate').max  = today.toISOString().split('T')[0];
+  document.getElementById('replayInstrument').value = document.getElementById('instrumentSelect')?.value || 'XAUUSD';
+  document.getElementById('replayTF').value = document.getElementById('tfSelect')?.value || '15min';
+  document.getElementById('replayModal').style.display = 'flex';
+}
+
+function closeReplayModal() {
+  document.getElementById('replayModal').style.display = 'none';
+}
+
+async function loadReplayCandles() {
+  const polygonKey = document.getElementById('polygonKey')?.value.trim();
+  if(!polygonKey) {
+    setReplayStatus('⚠ Necesitás Polygon key para datos históricos', 'red');
+    return;
+  }
+  const instrument = document.getElementById('replayInstrument').value;
+  const tf         = document.getElementById('replayTF').value;
+  const anchorStr  = document.getElementById('replayDate').value;
+  if(!anchorStr) { setReplayStatus('⚠ Elegí una fecha', 'red'); return; }
+
+  const tfMap = { '5min':{m:5,sp:'minute',days:5}, '15min':{m:15,sp:'minute',days:10}, '1h':{m:1,sp:'hour',days:30}, '4h':{m:4,sp:'hour',days:60} };
+  const cfg = tfMap[tf];
+  const anchor = new Date(anchorStr + 'T23:59:59Z');
+  const from   = new Date(anchor.getTime() - cfg.days*24*60*60*1000);
+
+  const tickerMap = { 'XAUUSD': 'C:XAUUSD', 'NDX': 'I:NDX' };
+  const ticker = tickerMap[instrument];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${cfg.m}/${cfg.sp}/${from.toISOString().split('T')[0]}/${anchor.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=5000&apiKey=${polygonKey}`;
+
+  setReplayStatus('Cargando…', 'dim');
+  document.getElementById('replayLoadBtn').disabled = true;
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    if(data.status === 'ERROR' || !data.results) {
+      setReplayStatus('⚠ ' + (data.error || data.message || 'Sin datos'), 'red');
+      return;
+    }
+    replayState.candles = data.results.map(r => ({ t:r.t, o:r.o, h:r.h, l:r.l, c:r.c, v:r.v }));
+    replayState.instrument = instrument;
+    replayState.tf = tf;
+    replayState.currentIdx = Math.min(replayState.candles.length - 1, replayState.visibleCount - 1);
+    setReplayStatus(`✓ ${replayState.candles.length} velas cargadas`, 'green');
+    enableReplayControls(true);
+    renderReplayChart();
+  } catch(e) {
+    setReplayStatus('⚠ Error: ' + e.message, 'red');
+  } finally {
+    document.getElementById('replayLoadBtn').disabled = false;
+  }
+}
+
+function setReplayStatus(text, kind) {
+  const el = document.getElementById('replayStatus');
+  el.textContent = text;
+  el.style.color = kind === 'red' ? 'var(--red)' : kind === 'green' ? 'var(--green)' : 'var(--dim2)';
+}
+
+function enableReplayControls(on) {
+  ['replayBack10','replayBack1','replayFwd1','replayFwd10','replayAnalyzeBtn'].forEach(id => {
+    document.getElementById(id).disabled = !on;
+  });
+}
+
+function replayStep(delta) {
+  const max = replayState.candles.length - 1;
+  const min = Math.min(replayState.visibleCount - 1, max);
+  replayState.currentIdx = Math.max(min, Math.min(max, replayState.currentIdx + delta));
+  renderReplayChart();
+}
+
+function renderReplayChart() {
+  const canvas = document.getElementById('replayCanvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const padTop = 40, padBot = 28, padLeft = 8, padRight = 70;
+
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, W, H);
+
+  if(!replayState.candles.length) return;
+
+  const endIdx   = replayState.currentIdx;
+  const startIdx = Math.max(0, endIdx - replayState.visibleCount + 1);
+  const slice    = replayState.candles.slice(startIdx, endIdx + 1);
+  if(!slice.length) return;
+
+  const lows  = slice.map(c => c.l);
+  const highs = slice.map(c => c.h);
+  let yMin = Math.min(...lows);
+  let yMax = Math.max(...highs);
+  const span = yMax - yMin || 1;
+  const pad = span * 0.08;
+  yMin -= pad; yMax += pad;
+
+  const plotW = W - padLeft - padRight;
+  const plotH = H - padTop - padBot;
+  const cw    = plotW / slice.length;
+
+  // Price grid + Y-axis labels
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.fillStyle   = '#888';
+  ctx.font        = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign   = 'left';
+  for(let i = 0; i <= 5; i++) {
+    const yPx    = padTop + (plotH * i / 5);
+    const price  = yMax - (yMax - yMin) * i / 5;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, yPx);
+    ctx.lineTo(W - padRight, yPx);
+    ctx.stroke();
+    ctx.fillText(price.toFixed(2), W - padRight + 4, yPx + 3);
+  }
+
+  // X-axis time labels (every ~10 candles)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#666';
+  const labelStep = Math.max(1, Math.floor(slice.length / 8));
+  for(let i = 0; i < slice.length; i += labelStep) {
+    const x   = padLeft + cw * (i + 0.5);
+    const dt  = new Date(slice[i].t);
+    const lbl = dt.getUTCHours().toString().padStart(2,'0') + ':' + dt.getUTCMinutes().toString().padStart(2,'0');
+    ctx.fillText(lbl, x, H - 10);
+  }
+
+  // Candles
+  const priceToY = p => padTop + plotH * (yMax - p) / (yMax - yMin);
+  const bodyW = Math.max(1, cw * 0.7);
+  for(let i = 0; i < slice.length; i++) {
+    const c   = slice[i];
+    const cx  = padLeft + cw * (i + 0.5);
+    const yO  = priceToY(c.o);
+    const yC  = priceToY(c.c);
+    const yH  = priceToY(c.h);
+    const yL  = priceToY(c.l);
+    const up  = c.c >= c.o;
+    ctx.strokeStyle = up ? '#00cc88' : '#cc3344';
+    ctx.fillStyle   = up ? '#00cc88' : '#cc3344';
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.moveTo(cx, yH); ctx.lineTo(cx, yL); ctx.stroke();
+    const top    = Math.min(yO, yC);
+    const height = Math.max(1, Math.abs(yC - yO));
+    ctx.fillRect(cx - bodyW/2, top, bodyW, height);
+  }
+
+  // Header overlay
+  const lastDt = new Date(slice[slice.length - 1].t);
+  const tfLbl  = { '5min':'5M','15min':'15M','1h':'1H','4h':'4H' }[replayState.tf] || replayState.tf;
+  const headerLbl = `${replayState.instrument} · ${tfLbl} · ${lastDt.toISOString().replace('T',' ').slice(0,16)} UTC · vela ${endIdx + 1}/${replayState.candles.length}`;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, padTop);
+  ctx.fillStyle = '#f0d080';
+  ctx.font = 'bold 12px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(headerLbl, 10, 22);
+  ctx.fillStyle = '#888';
+  ctx.font = '9px "IBM Plex Mono", monospace';
+  ctx.fillText(`O ${slice[slice.length-1].o.toFixed(2)}  H ${slice[slice.length-1].h.toFixed(2)}  L ${slice[slice.length-1].l.toFixed(2)}  C ${slice[slice.length-1].c.toFixed(2)}`, 10, 36);
+
+  // Position display
+  document.getElementById('replayPos').textContent = `vela ${endIdx + 1} de ${replayState.candles.length}`;
+}
+
+async function analyzeReplay() {
+  if(!replayState.candles.length) return;
+  const canvas = document.getElementById('replayCanvas');
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const parts = dataUrl.split(',');
+  const mediaType = parts[0].match(/data:(.*?);/)[1];
+  const base64 = parts[1];
+  const tfLbl = { '5min':'5M','15min':'15M','1h':'1H','4h':'4H' }[replayState.tf] || replayState.tf;
+  const lastDt = new Date(replayState.candles[replayState.currentIdx].t);
+
+  pendingImages.push({
+    base64,
+    mediaType,
+    dataUrl,
+    name: `replay_${replayState.instrument}_${tfLbl}_${lastDt.toISOString().slice(0,16)}.jpg`,
+    tf: tfLbl,
+    sizeKB: Math.round(base64.length * 0.75 / 1024)
+  });
+  renderImagePreviews();
+
+  const userInput = document.getElementById('userInput');
+  userInput.value = `[REPLAY ${replayState.instrument} ${tfLbl} · ${lastDt.toISOString().slice(0,16)} UTC] Analiza este chart histórico como si fuera el momento actual. Ignorá la fecha real del sistema.`;
+  closeReplayModal();
+  sendMessage();
 }
 </script>
 </body>
