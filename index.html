@@ -2792,14 +2792,21 @@ function addMessage(role, text, signal, imageDataUrl, annotationImage) {
         </div>`
   ) : '';
 
-  // Unique ID for this message's annotation canvas
-  const annotationId = annotationImage && signal?.annotations ? 'ann_' + Date.now() + '_' + Math.random().toString(36).slice(2,7) : null;
+  // Canvas anotado: se muestra siempre que hubo imagen (agent context).
+  // Si el modelo emitió annotations, se dibujan encima; si no, se muestra solo
+  // la imagen base con un banner advirtiendo que faltaron las marcas.
+  const annotationId = annotationImage ? 'ann_' + Date.now() + '_' + Math.random().toString(36).slice(2,7) : null;
+  const hasAnnotations = !!(signal?.annotations?.length);
   const annotationHtml = annotationId ? `
     <div style="margin-top:14px;border:1px solid var(--border2);background:var(--bg2);padding:8px">
       <div style="font-size:7px;letter-spacing:3px;color:var(--dim2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-        <span>◆ GRÁFICO ANOTADO POR EL AGENTE</span>
+        <span>◆ GRÁFICO ${hasAnnotations ? 'ANOTADO POR EL AGENTE' : '(SIN ANOTACIONES)'}</span>
         <button onclick="downloadAnnotation('${annotationId}')" style="background:transparent;border:1px solid var(--border);color:var(--dim2);font-size:7px;letter-spacing:1px;padding:2px 6px;cursor:pointer;font-family:'IBM Plex Mono'">DESCARGAR</button>
       </div>
+      ${hasAnnotations ? '' : `
+      <div style="margin-bottom:6px;padding:5px 8px;background:rgba(204,51,68,.08);border:1px solid rgba(204,51,68,.3);font-size:7px;letter-spacing:1.5px;color:var(--red);line-height:1.6">
+        ⚠ El agente no emitió anotaciones — niveles solo en la signal card.
+      </div>`}
       <canvas id="${annotationId}" style="max-width:100%;display:block;border:1px solid var(--border)"></canvas>
     </div>` : '';
 
@@ -2814,9 +2821,9 @@ function addMessage(role, text, signal, imageDataUrl, annotationImage) {
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 
-  // Draw annotations after DOM is in place
-  if(annotationId && signal?.annotations) {
-    setTimeout(() => drawAnnotations(annotationId, annotationImage, signal.annotations, signal), 50);
+  // Renderizar la imagen base + anotaciones (si hay) en el canvas
+  if(annotationId) {
+    setTimeout(() => drawAnnotations(annotationId, annotationImage, signal?.annotations || [], signal), 50);
   }
   return div;
 }
@@ -3355,10 +3362,16 @@ ZONAS RECTANGULARES (OB / FVG):
 
 REGLAS FINALES DE ANOTACIÓN:
 1. Si el precio está FUERA de [Y_MIN, Y_MAX] → NO lo anotes (no es visible).
-2. Mínimo obligatorio: entry, sl, tp (si hay señal activa).
+2. Mínimo obligatorio si hay señal activa (COMPRAR/VENDER): entry, sl, tp.
 3. Máximo 8 anotaciones totales — elige las más importantes.
 4. NO anotes zonas genéricas. Solo OBs/FVGs válidos que mencionaste en el análisis.
-5. Si NO generas señal (ESPERAR), puedes omitir annotations o incluir solo zonas identificadas.
+5. Si la señal es ESPERAR: igual emití el bloque <annotations> con AL MENOS las
+   zonas/niveles clave que identificaste (OB, FVG, BSL/SSL, soportes/resistencias).
+   Mínimo 1 anotación. NUNCA omitas el bloque entero.
+
+⛔ NUNCA respondas a una imagen sin emitir <annotations>...</annotations>.
+   Si no hay nada para anotar (caso muy raro), emití el tag con array vacío:
+   <annotations>[]</annotations>. Pero el caso normal tiene 2-6 anotaciones.
 
 ⚠ FORMATO OBLIGATORIO — escribe el array al final así (NO dentro de <signal>):
 <annotations>[{"type":"entry","label":"Entry 3980","x1":0,"y1":0.538,"x2":1,"y2":0.543,"price":3980},{"type":"sl","label":"SL 3920","x1":0,"y1":0.961,"x2":1,"y2":0.966,"price":3920}]</annotations>`;
