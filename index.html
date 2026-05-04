@@ -1069,6 +1069,9 @@ body.theme-silver ::selection { background: rgba(184,194,204,.25); color: var(--
           📷
         </label>
         <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(event)" multiple>
+        <button class="send-btn" id="micBtn" onclick="toggleDictation()" style="border-color:var(--border);color:var(--dim2)" title="Dictar por voz (Chrome/Edge)">
+          🎤
+        </button>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">→</button>
       </div>
     </div>
@@ -4785,6 +4788,85 @@ async function analyzeReplay() {
   userInput.value = `[REPLAY ${replayState.instrument} ${tfLbl} · ${lastDt.toISOString().slice(0,16)} UTC] Analiza este chart histórico como si fuera el momento actual. Ignorá la fecha real del sistema.`;
   closeReplayModal();
   sendMessage();
+}
+
+// ══════════════════════════════════════════════════════════
+// DICTADO POR VOZ — Web Speech API (Chrome/Edge)
+// ══════════════════════════════════════════════════════════
+let dictation = { rec: null, active: false, prefix: '', finalText: '' };
+
+function toggleDictation() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Rec) {
+    addMessage('system', '⚠ Tu navegador no soporta dictado por voz. Usá Chrome o Edge.');
+    return;
+  }
+  if(dictation.active) { stopDictation(); return; }
+
+  const rec = new Rec();
+  rec.lang = 'es-MX';
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  const input = document.getElementById('userInput');
+  dictation.prefix = input.value ? input.value.trim() + ' ' : '';
+  dictation.finalText = '';
+
+  rec.onresult = (ev) => {
+    let interim = '';
+    for(let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) dictation.finalText += t + ' ';
+      else interim += t;
+    }
+    input.value = dictation.prefix + dictation.finalText + interim;
+    input.scrollTop = input.scrollHeight;
+  };
+
+  rec.onerror = (ev) => {
+    if(ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      addMessage('system', '⚠ Permiso de micrófono denegado. Habilitalo en la barra del navegador.');
+    } else if(ev.error !== 'no-speech' && ev.error !== 'aborted') {
+      addMessage('system', '⚠ Error de dictado: ' + ev.error);
+    }
+    setMicState(false);
+  };
+
+  rec.onend = () => setMicState(false);
+
+  try {
+    rec.start();
+    dictation.rec = rec;
+    setMicState(true);
+  } catch(e) {
+    addMessage('system', '⚠ No se pudo iniciar el dictado: ' + e.message);
+    setMicState(false);
+  }
+}
+
+function stopDictation() {
+  if(dictation.rec) {
+    try { dictation.rec.stop(); } catch(e) {}
+  }
+  setMicState(false);
+}
+
+function setMicState(active) {
+  dictation.active = active;
+  const btn = document.getElementById('micBtn');
+  if(!btn) return;
+  if(active) {
+    btn.textContent = '⏹';
+    btn.style.borderColor = 'rgba(204,51,68,.6)';
+    btn.style.color = 'var(--red)';
+    btn.title = 'Detener dictado';
+  } else {
+    btn.textContent = '🎤';
+    btn.style.borderColor = 'var(--border)';
+    btn.style.color = 'var(--dim2)';
+    btn.title = 'Dictar por voz (Chrome/Edge)';
+    dictation.rec = null;
+  }
 }
 </script>
 </body>
