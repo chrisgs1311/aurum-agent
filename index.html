@@ -2332,11 +2332,17 @@ function buildSystemPrompt() {
     const c = technicalData.lastCandle;
     const rsiVal = parseFloat(technicalData.rsi);
     const rsiSignal = rsiVal > 70 ? '⚠ SOBRECOMPRADO' : rsiVal < 30 ? '⚠ SOBREVENDIDO' : 'NEUTRAL';
-    const recentCandles = technicalData.candles.slice(-5).map(c =>
+    // Pasar últimas 30 velas para que el modelo identifique swings sin estimar del gráfico
+    const recentCandles = technicalData.candles.slice(-30).map(c =>
       `  ${new Date(c.t).toUTCString().slice(17,22)} | O:${c.o.toFixed(2)} H:${c.h.toFixed(2)} L:${c.l.toFixed(2)} C:${c.c.toFixed(2)}`
     ).join('\n');
+    // Calcular swing high/low absolutos sobre el rango visible para anclar Y_MAX/Y_MIN
+    const allHighs = technicalData.candles.slice(-30).map(c => c.h);
+    const allLows  = technicalData.candles.slice(-30).map(c => c.l);
+    const rangeHigh = Math.max(...allHighs);
+    const rangeLow  = Math.min(...allLows);
     techContext = `
-DATOS TÉCNICOS REALES (Polygon.io · ${technicalData.totalCandles} velas):
+DATOS TÉCNICOS REALES (Polygon.io · ${technicalData.totalCandles} velas totales · usá estos valores, NO los estimes del gráfico):
 - RSI(14): ${technicalData.rsi} ${rsiSignal}
 - ATR(14): $${technicalData.atr}
 - EMA 9:  $${technicalData.ema9}
@@ -2344,7 +2350,8 @@ DATOS TÉCNICOS REALES (Polygon.io · ${technicalData.totalCandles} velas):
 - EMA 50: $${technicalData.ema50}
 - Tendencia EMA: ${technicalData.trend}
 - Vela actual: O:${c.o.toFixed(2)} H:${c.h.toFixed(2)} L:${c.l.toFixed(2)} C:${c.c.toFixed(2)}
-- Últimas 5 velas:
+- Rango últimas 30 velas: HIGH=${rangeHigh.toFixed(2)} | LOW=${rangeLow.toFixed(2)} | SPAN=${(rangeHigh-rangeLow).toFixed(2)}
+- Últimas 30 velas (cronológicas):
 ${recentCandles}`;
   }
 
@@ -3310,6 +3317,18 @@ RECORDÁ: vos NO dibujás. Devolvés un array de coordenadas y la app las pinta
 sobre el gráfico que te mandé. Es la única forma de "anotar" en este sistema.
 Si omitís el bloque <annotations>, el usuario NO ve cajas en el chart.
 
+⚠ FUENTE DE VERDAD PARA PRECIOS: en el system prompt arriba tenés "DATOS
+TÉCNICOS REALES" con las últimas 30 velas OHLC, swing high/low del rango,
+RSI y EMAs en valores exactos de Polygon. **USÁ ESOS NÚMEROS** para
+identificar swings, OBs, FVGs y para anclar Y_MAX/Y_MIN. El gráfico es
+solo confirmación visual del contexto, NO la fuente de precios.
+
+Si los datos verificados están disponibles:
+  • Y_MAX recomendado = swing high del rango + ~1 ATR de margen superior
+  • Y_MIN recomendado = swing low del rango  - ~1 ATR de margen inferior
+  • Esto te garantiza que las anotaciones queden DENTRO del área visible
+    sin tener que leer las etiquetas del eje Y a ojo.
+
 DESPUÉS del JSON <signal>, agrega un bloque <annotations>...</annotations> con un array
 de objetos con coordenadas RELATIVAS (0.0 a 1.0) para el GRÁFICO DE MENOR TIMEFRAME
 (el último que te envié — donde se ejecuta el entry).
@@ -3405,14 +3424,18 @@ REGLAS FINALES DE ANOTACIÓN:
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 7000,
+      // Extended thinking: el modelo razona privadamente antes de responder.
+      // Mejora notoriamente análisis multi-TF, divergencias y validación de geometría.
+      thinking: { type: "enabled", budget_tokens: 3000 },
       system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
       messages: msgsWithImg
     })
   });
   const data = await response.json();
   if(data.error) throw new Error(data.error.message);
-  const text = data.content?.map(b => b.text || '').join('') || '';
+  // Solo bloques de tipo 'text' — los bloques 'thinking' son razonamiento privado
+  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('') || '';
   // Return response text + LTF image (last one) for annotation rendering
   return { text, annotationImage: sorted[sorted.length - 1]?.dataUrl };
 }
