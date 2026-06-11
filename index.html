@@ -1326,7 +1326,14 @@ function saveMemory(mem) {
 
 function addSignalToMemory(signal) {
   const mem = loadMemory();
-  mem.signals.push({ ...signal, timestamp: new Date().toISOString(), price: marketData?.price });
+  const actionable = signal.action !== 'ESPERAR' && isFinite(Number(signal.entry))
+    && isFinite(Number(signal.sl)) && isFinite(Number(signal.tp2 ?? signal.tp));
+  mem.signals.push({
+    ...signal,
+    timestamp: new Date().toISOString(),
+    price: marketData?.price,
+    status: actionable ? 'PENDING' : undefined
+  });
   if(mem.signals.length > 100) mem.signals = mem.signals.slice(-100);
   mem.totalAnalysis++;
   saveMemory(mem);
@@ -1336,19 +1343,50 @@ function registerOutcome(signalIndex, won) {
   const mem = loadMemory();
   if(mem.signals[signalIndex]) {
     mem.signals[signalIndex].outcome = won ? 'WIN' : 'LOSS';
+    mem.signals[signalIndex].status  = 'RESOLVED'; // frena la resolución automática
     if(won) mem.wins++; else mem.losses++;
     saveMemory(mem);
     updateMemoryUI();
   }
 }
 
+// Resolución automática: corre con cada update de precio. Usa el high/low de la
+// última vela de Polygon (captura toques intra-vela); fallback al precio spot.
+function autoResolveSignals() {
+  if(!marketData?.price) return;
+  const hi = technicalData?.lastCandle?.h ?? marketData.price;
+  const lo = technicalData?.lastCandle?.l ?? marketData.price;
+  const mem = loadMemory();
+  let changed = false;
+  mem.signals.forEach(s => {
+    const patch = resolveSignalAgainstRange(s, hi, lo, Date.now());
+    if(!patch) return;
+    Object.assign(s, patch);
+    changed = true;
+    if(patch.status === 'ACTIVE') {
+      s.activatedAt = new Date().toISOString();
+      addMessage('system', `🤖 Señal ${s.action} $${Number(s.entry).toFixed(2)} ACTIVADA — el precio tocó el entry.`);
+    } else if(patch.outcome === 'WIN' || patch.outcome === 'LOSS') {
+      s.resolvedAt = new Date().toISOString();
+      s.auto = true;
+      if(patch.outcome === 'WIN') mem.wins++; else mem.losses++;
+      const dur = s.activatedAt ? Math.round((Date.now() - new Date(s.activatedAt).getTime())/60000) : '?';
+      addMessage('system', `🤖 Outcome automático: ${s.action} $${Number(s.entry).toFixed(2)} → ${patch.outcome}${patch.ambiguous ? ' (TP y SL en la misma vela — conservador)' : ''} · ${dur} min activa.`);
+    }
+  });
+  if(changed) { saveMemory(mem); updateMemoryUI(); }
+}
+
 function getMemorySummary() {
   const mem = loadMemory();
   const total = mem.wins + mem.losses;
   const wr = total > 0 ? ((mem.wins/total)*100).toFixed(0) : '—';
-  const recentSignals = mem.signals.slice(-10).map(s =>
-    `${s.action} @ $${s.entry || '—'} (${s.confidence}% conf) — ${s.outcome || 'pendiente'}`
-  ).join('\n');
+  const recentSignals = mem.signals.slice(-10).map(s => {
+    const state = s.outcome
+      ? s.outcome + (s.auto ? ' (auto)' : '')
+      : s.status === 'ACTIVE' ? 'ACTIVA (entry tocado, sin resolver)' : 'pendiente';
+    return `${s.action} @ $${s.entry || '—'} (${s.confidence}% conf) — ${state}`;
+  }).join('\n');
   const bestHours = getBestHours(mem);
   const bestPatterns = getTopPatterns(mem);
 
@@ -2718,6 +2756,7 @@ function parseSignal(text) {
 
 // Rechaza signals malformados: action inválida, niveles no numéricos,
 // geometría inconsistente (long con SL arriba, etc) o confidence fuera de rango.
+// El RR lo calcula el CÓDIGO (no el modelo) y sobreescribe sig.rr.
 // Devuelve el signal saneado o null si no pasa validación.
 function validateSignal(sig) {
   if(!sig || typeof sig !== 'object') return null;
@@ -2741,7 +2780,72 @@ function validateSignal(sig) {
   if(isFinite(conf)) sig.confidence = Math.max(0, Math.min(100, conf));
   else sig.confidence = 0;
 
+  // ── Aritmética en código, no en el modelo ──
+  // tp1/tp2 deben quedar entre entry y tp final, en orden; si no, se descartan
+  // (la card cae al formato de TP único en vez de mostrar parciales sin sentido).
+  if(sig.tp1 != null) {
+    const tp1 = Number(sig.tp1);
+    const tp2 = Number(sig.tp2 ?? tp);
+    const orderOk = action === 'COMPRAR'
+      ? (entry < tp1 && tp1 < tp2)
+      : (entry > tp1 && tp1 > tp2);
+    if(!isFinite(tp1) || !isFinite(tp2) || !orderOk) { delete sig.tp1; delete sig.tp2; }
+  }
+  // BE trigger debe estar entre entry y el primer objetivo; si no, se descarta.
+  if(sig.be_trigger != null) {
+    const be = Number(sig.be_trigger);
+    const firstTarget = Number(sig.tp1 ?? tp);
+    const beOk = action === 'COMPRAR' ? (entry < be && be <= firstTarget)
+                                      : (entry > be && be >= firstTarget);
+    if(!isFinite(be) || !beOk) delete sig.be_trigger;
+  }
+  // RR calculado por código sobre el TP final — sobreescribe lo que dijo el modelo.
+  sig.rr = computeRR(entry, sl, tp);
+  // Flag si no llega al mínimo del perfil de riesgo (la card lo muestra,
+  // Telegram lo filtra). DOM-safe: en tests Node no hay document.
+  let minRR = 0;
+  try {
+    const prof = document.getElementById('riskSelect')?.value;
+    minRR = ({ conservative: 1.0, moderate: 1.5, aggressive: 2.5 })[prof] || 0;
+  } catch(e) {}
+  if(minRR > 0 && Number(sig.rr) < minRR) { sig._belowMinRR = true; sig._minRR = minRR; }
+
   return sig;
+}
+
+// Reward/risk con el TP final. Devuelve string con 2 decimales (la UI lo muestra tal cual).
+function computeRR(entry, sl, tp) {
+  const risk = Math.abs(entry - sl);
+  if(risk === 0) return '0.00';
+  return (Math.abs(tp - entry) / risk).toFixed(2);
+}
+
+// Máquina de estados para resolver señales contra el rango de precio [lo, hi].
+// PENDING → ACTIVE cuando el precio toca el entry; ACTIVE → WIN/LOSS contra TP/SL.
+// Si TP y SL caen en el mismo rango (no sabemos el orden) → LOSS conservador.
+// PENDING por más de maxAgeMs sin activarse → EXPIRADA.
+// Función pura: devuelve el patch a aplicar, o null si no hay cambio.
+function resolveSignalAgainstRange(s, hi, lo, nowMs, maxAgeMs = 48 * 3600e3) {
+  if(!s || s.outcome || s.action === 'ESPERAR') return null;
+  const status = s.status || 'PENDING';
+  if(status === 'RESOLVED') return null;
+  const entry = Number(s.entry), sl = Number(s.sl), tp = Number(s.tp2 ?? s.tp);
+  if(!isFinite(entry) || !isFinite(sl) || !isFinite(tp)) return null;
+  const isLong = s.action === 'COMPRAR';
+
+  if(status === 'PENDING') {
+    if(lo <= entry && entry <= hi) return { status: 'ACTIVE' };
+    const age = nowMs - new Date(s.timestamp || 0).getTime();
+    if(age > maxAgeMs) return { status: 'RESOLVED', outcome: 'EXPIRADA' };
+    return null;
+  }
+  // ACTIVE
+  const tpHit = isLong ? hi >= tp : lo <= tp;
+  const slHit = isLong ? lo <= sl : hi >= sl;
+  if(tpHit && slHit) return { status: 'RESOLVED', outcome: 'LOSS', ambiguous: true };
+  if(tpHit) return { status: 'RESOLVED', outcome: 'WIN' };
+  if(slHit) return { status: 'RESOLVED', outcome: 'LOSS' };
+  return null;
 }
 
 function cleanText(text) {
@@ -2943,6 +3047,10 @@ function buildSignalCard(sig) {
         <span style="font-size:8px;color:var(--dim2)">${escapeHtml(sig.timeframe||'')} · ${escapeHtml(sig.session||'')}</span>
       </div>
       <div class="signal-main ${cls}">${em} ${escapeHtml(sig.action)}</div>
+      ${sig._belowMinRR ? `
+      <div style="margin-bottom:8px;padding:5px 10px;border:1px solid rgba(204,51,68,.4);background:rgba(204,51,68,.08);font-size:7px;letter-spacing:2px;color:var(--red)">
+        ⚠ RR ${escapeHtml(String(sig.rr))} POR DEBAJO DEL MÍNIMO ${sig._minRR} DE TU PERFIL — NO CUMPLE TU CRITERIO DE RIESGO
+      </div>` : ''}
       <div class="signal-levels" style="grid-template-columns:${sig.tp1 && sig.tp2 ? 'repeat(4,1fr)' : 'repeat(3,1fr)'}">
         <div class="signal-level">
           <div class="signal-level-label">ENTRADA</div>
@@ -3174,10 +3282,12 @@ async function runAnalysis() {
     chatHistory = trimHistoryInPairs(chatHistory, 20);
     addMessage('agent', text, signal);
     if(signal && signal.action !== 'ESPERAR') {
-      if(tgEnabled) {
+      if(tgEnabled && !signal._belowMinRR) {
         const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning, signal.tp1, signal.tp2, signal.be_trigger);
         signal._tgSent = sent;
         if(sent) addMessage('system', '✓ Señal enviada al canal de Telegram');
+      } else if(tgEnabled && signal._belowMinRR) {
+        addMessage('system', `⚠ No enviada a Telegram: RR ${signal.rr} < mínimo ${signal._minRR} del perfil.`);
       }
       addToHistory(signal);
     } else if(signal) {
@@ -3481,10 +3591,12 @@ async function sendMessage() {
     addMessage('agent', clean, signal, null, annotationImage);
     saveChatHistory();
     if(signal && signal.action !== 'ESPERAR') {
-      if(tgEnabled) {
+      if(tgEnabled && !signal._belowMinRR) {
         const sent = await sendToTelegram(signal.action, signal.entry, signal.tp, signal.sl, signal.rr, signal.confidence, signal.reasoning, signal.tp1, signal.tp2, signal.be_trigger);
         signal._tgSent = sent;
         if(sent) addMessage('system', '✓ Señal enviada al canal de Telegram');
+      } else if(tgEnabled && signal._belowMinRR) {
+        addMessage('system', `⚠ No enviada a Telegram: RR ${signal.rr} < mínimo ${signal._minRR} del perfil.`);
       }
       addToHistory(signal);
     }
@@ -4183,6 +4295,7 @@ document.getElementById('instrumentSelect')?.addEventListener('change', () => {
 
 fetchMarketData();
 setInterval(fetchMarketData, 30000);
+setInterval(autoResolveSignals, 30000); // resolver señales pendientes contra el precio
 fetchDXYData();
 setInterval(fetchDXYData, 5 * 60 * 1000);
 fetchKeyLevels();

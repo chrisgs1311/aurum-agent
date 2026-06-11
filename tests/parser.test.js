@@ -113,6 +113,81 @@ test('usa tp2 si tp falta', () => {
   truthy(validateSignal({ action: 'COMPRAR', entry: 3980, tp2: 4045, sl: 3925, confidence: 70 }));
 });
 
+console.log('\ncomputeRR / aritmética en código');
+
+test('computeRR calcula reward/risk correcto', () => {
+  eq(computeRR(3980, 3925, 4045), '1.18'); // reward 65 / risk 55
+  eq(computeRR(4000, 4030, 3950), '1.67'); // short: reward 50 / risk 30
+});
+
+test('validateSignal sobreescribe el rr que dijo el modelo', () => {
+  const r = validateSignal({ action: 'COMPRAR', entry: 3980, tp: 4045, sl: 3925, rr: '99.0', confidence: 70 });
+  eq(r.rr, '1.18');
+});
+
+test('descarta tp1/tp2 con orden inválido (long con tp1 > tp2)', () => {
+  const r = validateSignal({ action: 'COMPRAR', entry: 3980, tp: 4045, tp1: 4050, tp2: 4045, sl: 3925, confidence: 70 });
+  truthy(r); falsy(r.tp1, 'tp1 inválido debe borrarse');
+});
+
+test('mantiene tp1/tp2 con orden válido', () => {
+  const r = validateSignal({ action: 'COMPRAR', entry: 3980, tp: 4045, tp1: 4010, tp2: 4045, sl: 3925, confidence: 70 });
+  eq(Number(r.tp1), 4010);
+});
+
+test('descarta be_trigger fuera de [entry, primer objetivo]', () => {
+  const r = validateSignal({ action: 'COMPRAR', entry: 3980, tp: 4045, sl: 3925, be_trigger: 3900, confidence: 70 });
+  truthy(r); falsy(r.be_trigger);
+});
+
+console.log('\nresolveSignalAgainstRange / outcomes automáticos');
+
+const NOW = Date.now();
+const base = { action: 'COMPRAR', entry: 3980, sl: 3925, tp: 4045, timestamp: new Date(NOW).toISOString() };
+
+test('PENDING se activa cuando el rango toca el entry', () => {
+  eq(resolveSignalAgainstRange({ ...base }, 3990, 3975, NOW), { status: 'ACTIVE' });
+});
+
+test('PENDING no se activa si el precio no llegó', () => {
+  eq(resolveSignalAgainstRange({ ...base }, 4010, 3995, NOW), null);
+});
+
+test('PENDING expira después de 48h sin activarse', () => {
+  const old = { ...base, timestamp: new Date(NOW - 49 * 3600e3).toISOString() };
+  eq(resolveSignalAgainstRange(old, 4010, 3995, NOW), { status: 'RESOLVED', outcome: 'EXPIRADA' });
+});
+
+test('ACTIVE long → WIN si toca TP', () => {
+  eq(resolveSignalAgainstRange({ ...base, status: 'ACTIVE' }, 4050, 4000, NOW), { status: 'RESOLVED', outcome: 'WIN' });
+});
+
+test('ACTIVE long → LOSS si toca SL', () => {
+  eq(resolveSignalAgainstRange({ ...base, status: 'ACTIVE' }, 3990, 3920, NOW), { status: 'RESOLVED', outcome: 'LOSS' });
+});
+
+test('ACTIVE con TP y SL en la misma vela → LOSS conservador', () => {
+  const r = resolveSignalAgainstRange({ ...base, status: 'ACTIVE' }, 4050, 3920, NOW);
+  eq(r.outcome, 'LOSS'); truthy(r.ambiguous);
+});
+
+test('ACTIVE short → WIN si baja al TP', () => {
+  const short = { action: 'VENDER', entry: 4000, sl: 4030, tp: 3950, status: 'ACTIVE', timestamp: base.timestamp };
+  eq(resolveSignalAgainstRange(short, 4005, 3945, NOW), { status: 'RESOLVED', outcome: 'WIN' });
+});
+
+test('ignora ESPERAR, resueltas y con outcome', () => {
+  falsy(resolveSignalAgainstRange({ action: 'ESPERAR' }, 4050, 3920, NOW));
+  falsy(resolveSignalAgainstRange({ ...base, status: 'RESOLVED' }, 4050, 3920, NOW));
+  falsy(resolveSignalAgainstRange({ ...base, outcome: 'WIN' }, 4050, 3920, NOW));
+});
+
+test('usa tp2 como objetivo final si existe', () => {
+  const s = { ...base, tp2: 4060, status: 'ACTIVE' };
+  eq(resolveSignalAgainstRange(s, 4050, 4000, NOW), null); // 4050 < tp2=4060: aún no
+  eq(resolveSignalAgainstRange(s, 4065, 4000, NOW).outcome, 'WIN');
+});
+
 console.log('\ncleanText');
 
 test('quita signal + annotations cerrados', () => {
