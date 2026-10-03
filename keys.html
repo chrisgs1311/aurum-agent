@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURUM · Configurar Keys</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: radial-gradient(ellipse at 50% 0%, #0F0C02 0%, #080600 50%, #000 100%);
+    color: #E8E0C0;
+    font-family: monospace;
+    min-height: 100vh;
+    padding: 24px 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 {
+    font-family: Georgia, serif;
+    font-size: 22px;
+    letter-spacing: 6px;
+    color: #C9A84C;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .sub {
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #5A4820;
+    margin-bottom: 28px;
+  }
+  label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: #5A4820;
+    margin: 18px 0 6px;
+  }
+  input {
+    width: 100%;
+    background: #111005;
+    border: 1px solid rgba(201,168,76,.25);
+    color: #C9A84C;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 14px 12px;
+    outline: none;
+    border-radius: 0;
+  }
+  input:focus { border-color: #C9A84C; }
+  .hint { font-size: 10px; color: #3D3010; margin-top: 4px; line-height: 1.5; }
+  button {
+    width: 100%;
+    margin-top: 28px;
+    padding: 16px;
+    background: transparent;
+    border: 1px solid rgba(201,168,76,.6);
+    color: #C9A84C;
+    font-family: Georgia, serif;
+    font-size: 14px;
+    letter-spacing: 4px;
+    cursor: pointer;
+  }
+  button:active { background: rgba(201,168,76,.12); }
+  #msg {
+    margin-top: 18px;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 1px;
+    min-height: 20px;
+  }
+  .ok { color: #00CC88; }
+  .back {
+    display: block;
+    text-align: center;
+    margin-top: 24px;
+    color: #5A4820;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+  <h1>AURUM</h1>
+  <div class="sub">CONFIGURAR API KEYS</div>
+
+  <label>ANTHROPIC API KEY</label>
+  <input id="k_anthropic" type="password" placeholder="sk-ant-api03-..." autocomplete="off">
+  <div class="hint">La misma que usas en tu AURUM. Sin esto el agente no puede pensar.</div>
+
+  <label>POLYGON.IO API KEY</label>
+  <input id="k_polygon" type="password" placeholder="Polygon key..." autocomplete="off">
+  <div class="hint">Para velas reales, RSI, ATR y EMAs. Sin esto solo verás precio de referencia.</div>
+
+  <label>TELEGRAM BOT TOKEN (opcional)</label>
+  <input id="k_tg_token" type="password" placeholder="123456:ABC..." autocomplete="off">
+
+  <label>TELEGRAM CHAT ID (opcional)</label>
+  <input id="k_tg_chat" type="text" placeholder="@tucanal" autocomplete="off">
+  <div class="hint">Para recibir señales automáticas en Telegram.</div>
+
+  <button onclick="saveKeys()">◆ GUARDAR KEYS</button>
+  <div id="msg"></div>
+  <a class="back" href="/">← VOLVER A AURUM</a>
+
+<script>
+  // Carga valores existentes
+  document.getElementById('k_anthropic').value = localStorage.getItem('aurum_api_key') || '';
+  document.getElementById('k_polygon').value   = localStorage.getItem('aurum_polygon_key') || '';
+  document.getElementById('k_tg_token').value  = localStorage.getItem('aurum_tg_token') || '';
+  document.getElementById('k_tg_chat').value   = localStorage.getItem('aurum_tg_chat') || '';
+
+  function saveKeys() {
+    const a = document.getElementById('k_anthropic').value.trim();
+    const p = document.getElementById('k_polygon').value.trim();
+    const t = document.getElementById('k_tg_token').value.trim();
+    const c = document.getElementById('k_tg_chat').value.trim();
+    const msg = document.getElementById('msg');
+
+    if (!a) {
+      msg.textContent = '⚠ Pon al menos la key de Anthropic.';
+      msg.className = '';
+      return;
+    }
+    // Mismas keys que usa la app principal (mismo localStorage, mismo dominio)
+    localStorage.setItem('aurum_api_key', a);
+    if (p) localStorage.setItem('aurum_polygon_key', p);
+    if (t) localStorage.setItem('aurum_tg_token', t);
+    if (c) localStorage.setItem('aurum_tg_chat', c);
+
+    msg.textContent = '✓ Keys guardadas. Vuelve a AURUM y presiona ANALIZAR MERCADO.';
+    msg.className = 'ok';
+  }
+</script>
+</body>
+</html>
